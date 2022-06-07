@@ -206,16 +206,16 @@ class WorldTraj(object):
 
     def min_snap_traj_update(self, t):
         #lemniscate params
-        #w_c = 1.6
-        #p = 2.5
-        #theta = 0
-        #shape = 'lemniscate'
+        w_c = 1.4
+        p = 2.5
+        theta = 0
+        shape = 'lemniscate'
 
         #circle params
-        w_c = 3
-        p = 1
-        theta = 0
-        shape = 'circle'
+        #w_c = 3
+        #p = 1
+        #theta = 0
+        #shape = 'circle'
 
         #start trajectory
         if self.i == 0 and t == np.inf: #first inf - pass end location

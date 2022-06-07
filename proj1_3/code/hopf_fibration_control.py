@@ -194,7 +194,7 @@ class HopfFibrationControl(object):
         '''
         r_dott_des = flat_output["x_ddot"] - np.matmul(self.K_d, (state["v"]-flat_output["x_dot"])) - np.matmul(self.K_p, (state["x"] - flat_output["x"])) #desired acceleration
         #print('r dotdot des: ', r_dott_des)
-        F_des = (self.mass*r_dott_des + np.array([0, 0, self.mass*self.g]))*self.quad_sign#desired force
+        F_des = (self.mass*r_dott_des + np.array([0, 0, self.mass*self.g]))#desired force
         #print('F des: ', F_des)
 
         #calculate rotaiton matrix from input quaternion

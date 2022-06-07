@@ -88,8 +88,8 @@ def animate(time, position, rotation, world, filename=None, blit=False, show_axe
     ax.set_xlim(-2,3)
     ax.set_ylim(-2,3)
     ax.set_zlim(-2,3)
-    #ax.azim = 90 - to face xz plane
-    #ax.elev = 1
+    ax.azim = 90 #- to face xz plane
+    ax.elev = 1
 
     quad = Quadrotor(ax)
 

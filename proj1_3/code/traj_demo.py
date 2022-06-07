@@ -199,8 +199,8 @@ ax.legend(handles=[
 # Animation (Slow)
 # Instead of viewing the animation live, you may provide a .mp4 filename to save.
 R = Rotation.from_quat(state['q']).as_matrix()
-#filename = "1m_circle_30.mp4"
-filename = None
+filename = "2.5m_lemniscate_w_1.4.mp4"
+#filename = None
 ani = animate(sim_time, state['x'], R, world=world, filename=filename)
 plt.show()
 

@@ -84,7 +84,7 @@ def simulate(initial_state, quadrotor, controller, trajectory, t_final, terminat
         if exit_status:
             break
         time.append(time[-1] + t_step)
-        state.append(quadrotor.step(state[-1], control[-1]['cmd_motor_speeds'], t_step))
+        state.append(quadrotor.step(state[-1], control[-1]['cmd_motor_speeds'], t_step, control[-1]['cmd_m']))
         flat.append(sanitize_trajectory_dic(trajectory.update(time[-1])))
         control.append(sanitize_control_dic(controller.update(time[-1], state[-1], flat[-1])))
 
@@ -220,7 +220,7 @@ class Quadrotor(object):
         self.Iyy             = quad_params['Iyy']  # kg*m^2
         self.Izz             = quad_params['Izz']  # kg*m^2
         self.arm_length      = quad_params['arm_length'] # meters
-        self.rotor_speed_min = quad_params['rotor_speed_min'] # rad/s
+        self.rotor_speed_min = quad_params['rotor_speed_bi_min'] # rad/s
         self.rotor_speed_max = quad_params['rotor_speed_max'] # rad/s
         self.k_thrust        = quad_params['k_thrust'] # N/(rad/s)**2
         self.k_drag          = quad_params['k_drag']   # Nm/(rad/s)**2
@@ -239,7 +239,7 @@ class Quadrotor(object):
         self.inv_inertia = inv(self.inertia)
         self.weight = np.array([0, 0, -self.mass*self.g])
 
-    def step(self, state, cmd_rotor_speeds, t_step):
+    def step(self, state, cmd_rotor_speeds, t_step, cmd_motor_signs):
         """
         Integrate dynamics forward from state given constant cmd_rotor_speeds for time t_step.
         """
@@ -248,7 +248,7 @@ class Quadrotor(object):
         rotor_speeds = np.clip(cmd_rotor_speeds, self.rotor_speed_min, self.rotor_speed_max)
 
         # Compute individual rotor thrusts and net thrust and net moment.
-        rotor_thrusts = self.k_thrust * rotor_speeds**2
+        rotor_thrusts = self.k_thrust * np.multiply(rotor_speeds**2, cmd_motor_signs)
         TM = self.to_TM @ rotor_thrusts
         T = TM[0]
         M = TM[1:4]
