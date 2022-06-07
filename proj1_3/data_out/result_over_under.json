@@ -1,0 +1,9 @@
+{
+    "stopped_at_goal": false,
+    "no_collision": false,
+    "flight_time": 14.36,
+    "flight_distance": 98.15,
+    "planning_time": 18.76,
+    "collision_point": [14.850475613397021, 2.7121735933044215, 3.249399207504334],
+    "sim_exit": "Failure: Your quadrotor is out of control; it flew away with a position error greater than 20 meters."
+}
