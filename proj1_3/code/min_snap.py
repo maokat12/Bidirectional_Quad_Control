@@ -19,6 +19,7 @@ class MinSnap(object):
         self.plt = False
         self.start = self.points[0]
         self.acc_cons = None
+        self.no_acc_cons = True
 
         #remove second point in maze
         #print(self.points)
@@ -34,6 +35,7 @@ class MinSnap(object):
 
     def set_acc_cons(self, acc_cons):
         self.acc_cons = acc_cons
+        self.no_acc_cons = False
 
     def get_Hessian(self):
         H = None
@@ -83,7 +85,7 @@ class MinSnap(object):
                 beq_y = np.hstack((beq_y, self.points[i+1][1], self.points[i+1][1]))
                 beq_z = np.hstack((beq_z, self.points[i+1][2], self.points[i+1][2]))
 
-            if self.acc_cons == None: #no acceleration constraints
+            if self.no_acc_cons: #no acceleration constraints
                 #continuity constraints
                 for i in range(self.num_segments-1):
                     T = self.time_segments[i]
@@ -100,7 +102,7 @@ class MinSnap(object):
                     beq_y = np.hstack((beq_y, np.zeros(3)))
                     beq_z = np.hstack((beq_z, np.zeros(3)))
             else: #acceleration constraints
-                j = 0
+                #j = 0
                 for i in range(self.num_segments-1):
                     T = self.time_segments[i]
                     A_eq_sub_LHS = np.block([[7*T**6, 6*T**5, 5*T**4, 4*T**3, 3*T**2, 2*T, 1, 0],
@@ -113,34 +115,20 @@ class MinSnap(object):
                     beq_x = np.hstack((beq_x, np.zeros(2)))
                     beq_y = np.hstack((beq_y, np.zeros(2)))
                     beq_z = np.hstack((beq_z, np.zeros(2)))
-
-                    #all acc constraints
-                    A_eq_sub_LHS = np.array([210*T**4, 120*T**3, 60*T**2, 24*T, 6, 0, 0, 0])
-                    A_eq_sub_RHS = np.array([0, 0, 0, 0, -6, 0, 0, 0])
-                    A_eq_sub = np.block([[np.zeros(8*i), A_eq_sub_LHS, np.zeros(8*(self.num_segments-(i+1)))],
-                                         [np.zeros(8*(i+1)), A_eq_sub_RHS, np.zeros(8*(self.num_segments-(i+2)))]])
-                    A_eq = np.vstack((A_eq,
-                                      A_eq_sub))
-                    beq_x = np.hstack((beq_x, self.acc_cons[i+1][0], self.acc_cons[i+1][0]))
-                    beq_y = np.hstack((beq_y, self.acc_cons[i+1][1], self.acc_cons[i+1][1]))
-                    beq_z = np.hstack((beq_z, self.acc_cons[i+1][2], self.acc_cons[i+1][2]))
-
-                    ''' only top and bottom acc constraints
-                    if i % 8 == 4 or i % 8 == 0: #force acc constraints on only some locations THIS IS STILL NOT WORKING
+                    
+                    #check if there's an acceleration constraint for this waypoint
+                    acc_con_index = np.where(self.acc_cons[:, 3] == (i+1))
+                    if len(acc_con_index[0]) == 1: #position found, value should only ever be 1
+                        index = acc_con_index[0][0]
                         A_eq_sub_LHS = np.array([210*T**4, 120*T**3, 60*T**2, 24*T, 6, 0, 0, 0])
                         A_eq_sub_RHS = np.array([0, 0, 0, 0, -6, 0, 0, 0])
                         A_eq_sub = np.block([[np.zeros(8*i), A_eq_sub_LHS, np.zeros(8*(self.num_segments-(i+1)))],
                                              [np.zeros(8*(i+1)), A_eq_sub_RHS, np.zeros(8*(self.num_segments-(i+2)))]])
                         A_eq = np.vstack((A_eq,
                                           A_eq_sub))
-                        #beq_x = np.hstack((beq_x, self.acc_cons[i+1][0], self.acc_cons[i+1][0]))
-                        #beq_y = np.hstack((beq_y, self.acc_cons[i+1][1], self.acc_cons[i+1][1]))
-                        #beq_z = np.hstack((beq_z, self.acc_cons[i+1][2], self.acc_cons[i+1][2]))
-                        beq_x = np.hstack((beq_x, self.acc_cons[j][0], self.acc_cons[j][0]))
-                        beq_y = np.hstack((beq_y, self.acc_cons[j][1], self.acc_cons[j][1]))
-                        beq_z = np.hstack((beq_z, self.acc_cons[j][2], self.acc_cons[j][2]))
-                        j = j+1
-                    '''
+                        beq_x = np.hstack((beq_x, self.acc_cons[index][0], self.acc_cons[index][0]))
+                        beq_y = np.hstack((beq_y, self.acc_cons[index][1], self.acc_cons[index][1]))
+                        beq_z = np.hstack((beq_z, self.acc_cons[index][2], self.acc_cons[index][2]))
         '''
         import csv
         with open('a_eq.csv', 'w') as csvfile:
@@ -155,8 +143,8 @@ class MinSnap(object):
             # writing the data rows
             a = np.vstack([beq_x, beq_y, beq_z])
             csvwriter.writerows(a)
-        exit()
         '''
+        #exit()
         return A_eq, beq_x, beq_y, beq_z
 
     def get_Aineq(self, vel_max, dist_threshold):

@@ -52,10 +52,10 @@ class WaypointTraj(object):
         return pos
 
     def get_acc_constraints(self, pos):
-        acc_constraints = np.array([0, 0, 0])
+        acc_constraints = np.array([0, 0, 0, 0])
         #start at rest
         for i in range(len(pos)):
-            '''
+
             #only get the point at apex of circle
             if i % self.points  == self.points/2 or i % self.points == 0:
                 #find acc constrain
@@ -68,7 +68,8 @@ class WaypointTraj(object):
                 else:
                     b_3 = b_3/np.linalg.norm(b_3) #unit vector [a, b, c]
                     acc_des = 1/quad_params['mass']*b_3*self.des_thrust - np.array([0, 0, 9.81])
-                acc_constraints = np.vstack([acc_constraints, acc_des])
+                acc_constraints = np.block([[acc_constraints],
+                                            [acc_des, i]])
             '''
             if i < np.ceil(self.points/4): #ramp up first quater turn
                 des_thrust = i/np.ceil(self.points/4)*self.des_thrust
@@ -86,8 +87,9 @@ class WaypointTraj(object):
             else:
                 b_3 = b_3/np.linalg.norm(b_3) #unit vector [a, b, c]
                 acc_des = 1/quad_params['mass']*b_3*des_thrust - np.array([0, 0, 9.81])
-            acc_constraints = np.vstack([acc_constraints, acc_des])
-
+            acc_constraints = np.block([[acc_constraints],
+                                        [acc_des, i]])
+            '''
         acc_constraints = np.delete(acc_constraints, 0, 0)
         #print(acc_constraints)
         return acc_constraints

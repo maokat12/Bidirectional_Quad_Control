@@ -15,7 +15,7 @@ class WorldTrajMod(object):
     """
 
     def __init__(self, world, start, cons):
-        self.vel = 4 # m/s - self selected
+        self.vel = 2 # m/s - self selected
         self.max_vel = 10 #m/s
             #use 3.4 for naive
         self.x_dot = np.zeros((3,))
@@ -45,17 +45,19 @@ class WorldTrajMod(object):
             self.traj_struct = self.naive_trajectory(self.points, self.start, self.x_dot, self.vel)
         else: #min snap
             dist_vel = self.vel #m/s
-            vel_max = 100*self.vel #m/s
+            vel_max = 2*self.vel #m/s
             dist_threshold = 10 #m
 
             my_min_snap = MinSnap(self.points, dist_vel, vel_max, dist_threshold)
-            #my_min_snap.set_acc_cons(self.acc_cons)
+            my_min_snap.set_acc_cons(self.acc_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
 
+            '''
             with open('traj_struct.csv', 'w') as csvfile:
                 csvwriter = csv.writer(csvfile)
                 # writing the data rows
                 csvwriter.writerows(self.traj_struct)
+            '''
 
     def naive_trajectory(self, points, start, x_dot, vel):
         # create trajectory structure

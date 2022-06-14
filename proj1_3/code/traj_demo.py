@@ -42,12 +42,22 @@ robot_radius = 0.25
 my_se3_control = HopfFibrationControl(quad_params)
 
 # Map Traj Object
-my_world_traj = WorldTraj(world, start, goal)
+#my_world_traj = WorldTraj(world, start, goal) #for forced circle trajectories
 
 # Waypoint Trajectory Object
 my_waypoint_traj = WaypointTraj(start, 2, 1, 0, 8, 2, 'circle')
 cons = my_waypoint_traj.get_contraints()
-#my_world_traj = WorldTrajMod(world, start, cons)
+
+#narrow window constraints
+des_thrust = quad_params['k_thrust']*4*(1*quad_params['rotor_speed_max'])**2
+pos = np.array([[0, -1, 0], [0, 0, 4], [0, 3.5, 4],  [0, 4, 4], [0, 4.5, 4], [0, 8, 4], [0, 9, 0]])
+#acc = np.array([[0, 0, des_thrust/quad_params['mass']*(0-9.81), 2], [0, 0, des_thrust/quad_params['mass']*(0-9.81), 3], [0, 0, des_thrust/quad_params['mass']*(0-9.81), 4]])
+pos = np.array([[0, -1, 0], [0, 0, 4], [0, 4, 4], [0, 8, 4], [0, 9, 0]])
+acc = np.array([[0, 0, des_thrust/quad_params['mass']*(-0-9.81), 2]])
+cons = (pos, acc)
+start = pos[0]
+
+my_world_traj = WorldTrajMod(world, start, cons) #for min snap w/body angle control
 
 # Set simulation parameters.
 t_final = 20
@@ -199,7 +209,7 @@ ax.legend(handles=[
 # Animation (Slow)
 # Instead of viewing the animation live, you may provide a .mp4 filename to save.
 R = Rotation.from_quat(state['q']).as_matrix()
-filename = "2.5m_lemniscate_w_1.4.mp4"
+filename = "min_snap_path_kr_3700.mp4"
 #filename = None
 ani = animate(sim_time, state['x'], R, world=world, filename=filename)
 plt.show()

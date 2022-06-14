@@ -89,6 +89,7 @@ class HopfFibrationControl(object):
         k_d = 3.5#3.5 f
         #kw - 23, 23 16
         #kr - 430 430 131
+        k_r = 3700
 
         self.K_p = np.array([[k_p, 0, 0],
                              [0, k_p, 0],
@@ -102,9 +103,9 @@ class HopfFibrationControl(object):
                              [0, 72, 0],
                              [0, 0, 72]])
 
-        self.K_r = np.array([[3700, 0, 0],
-                             [0, 3700, 0],
-                             [0, 0, 3700]])
+        self.K_r = np.array([[k_r, 0, 0],
+                             [0, k_r, 0],
+                             [0, 0, k_r]])
         self.i = 0
 
     def vee_map(self, R):
@@ -203,12 +204,16 @@ class HopfFibrationControl(object):
 
         #unit vector of desired force/b3
         [a, b, c] = self.quad_sign*F_des / np.linalg.norm(F_des)
+        # print('a: ', a, ', b: ', b, ', c: ', c)
 
         yaw = flat_output["yaw"]
         #print('c', c)
 
         q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
         q_abc = (1/np.sqrt(2*(1+c))) * np.array([1+c,-b,a,0]) #w + xi + yj + zk
+        #q_abc = None
+        #q_yaw = None
+        q_abc_bar_inv = None
 
         #calculate yaw/q_abc based on desired quat map
         if c <= 0 and self.quad_sign == 1:  # quad cross from upright to inverse
@@ -221,18 +226,27 @@ class HopfFibrationControl(object):
             print('flip to inverse!')
         elif c >= 0 and self.quad_sign == -1:  # quad cross from inverse to upright
             q_abc = 1 / np.sqrt(2 * (1 + c)) * np.array([1 + c, -b, a, 0])
-            #yaw = np.arctan2(a, b) + yaw  ##TODO - double check math on this conversion
+            #yaw = np.arctan2(a, b) + yaw
             #yaw kept as is
             self.quad_sign = 1
             print('flip to upright!')
-        elif c <= 0 and self.quad_sign == -1:
-            q_abc_bar = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
-            q_abc_bar_inv = q_abc_bar * np.array([1, -1, -1, -1])
-            q_yaw = self.quaternion_multiply(q_abc_bar_inv, self.quaternion_multiply(q_abc, q_yaw))
-            q_abc = q_abc_bar
+        elif c <= 0 and self.quad_sign == -1: #quad stays inverted
+            if c + 1 < 0.000001: ## temp fix to below issue -> need more permanent solution in the future
+                q_abc = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
+                yaw = np.arctan2(a, b) + yaw
+                q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
+                #print('a')
+            else:
+                # TODO - this method fails at c = -1 -> hits singularity -> temp fix in-*- above if statement
+                q_abc_bar = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
+                q_abc_bar_inv = q_abc_bar * np.array([1, -1, -1, -1])
+                q_yaw = self.quaternion_multiply(q_abc_bar_inv, self.quaternion_multiply(q_abc, q_yaw))
+                q_abc = q_abc_bar
+            # TODO - this method isn't giving the same results as ^ method
             #yaw = np.arctan2(a, b) + yaw
+            #q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
             #print(3)
-        elif c >= 0 and self.quad_sign == 1:
+        elif c >= 0 and self.quad_sign == 1: #quad stays upright
             q_abc = 1 / np.sqrt(2 * (1 + c)) * np.array([1+c, -b, a, 0])
             q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
             #print(4)
@@ -241,8 +255,18 @@ class HopfFibrationControl(object):
         #q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
         q_des = self.quaternion_multiply(q_abc, q_yaw) #w + xi + yj + zk
         q_des = np.hstack((q_des[1:4], q_des[0])) #xi + yj + zk + w
-        R_des = Rotation.from_quat(q_des).as_matrix() #from quat takes xi + yj + zk + w
-
+        try:
+            R_des = Rotation.from_quat(q_des).as_matrix() #from quat takes xi + yj + zk + w
+        except:
+            print('set')
+            print('q_des',q_des)
+            print('q_abc',q_abc)
+            print('q_yaw',q_yaw)
+            print('yaw',yaw)
+            print(c)
+            print(self.quad_sign)
+            print(q_abc_bar_inv)
+            exit()
         e_R = 0.5 * self.vee_map(R_des.T@R - R.T@R_des)
         e_W = state["w"] - 0  # let w_des = 0 for now
 
