@@ -16,21 +16,23 @@ class WorldTrajMod(object):
 
     def __init__(self, world, start, cons):
         self.vel = 2 # m/s - self selected
-        self.max_vel = 10 #m/s
-            #use 3.4 for naive
+        self.max_vel = 5 #m/s,  #use 3.4 for naive
+        self.dist_threshold = 1 #m
         self.x_dot = np.zeros((3,))
         self.x_ddot = np.zeros((3,))
         self.x_dddot = np.zeros((3,))
         self.x_ddddot = np.zeros((3,))
         self.yaw = 0
         self.yaw_dot = 0
+        self.quad_o = 1
         self.k = -1
         self.naive = False
         self.num_segments = None
 
         #break out constraints
-        self.points = cons[0]
-        self.acc_cons = cons[1]
+        self.points = cons[0] #position constraint
+        self.acc_cons = cons[1] #orientation constraint
+        self.o_cons = cons[2] #upright vs inverse
 
         #declare start/stop
         self.start = self.points[0]  # m
@@ -44,14 +46,12 @@ class WorldTrajMod(object):
         if self.naive:
             self.traj_struct = self.naive_trajectory(self.points, self.start, self.x_dot, self.vel)
         else: #min snap
-            dist_vel = self.vel #m/s
-            vel_max = 2*self.vel #m/s
-            dist_threshold = 10 #m
-
-            my_min_snap = MinSnap(self.points, dist_vel, vel_max, dist_threshold)
-            my_min_snap.set_acc_cons(self.acc_cons)
+            my_min_snap = MinSnap(self.points, self.vel, self.max_vel, self.dist_threshold)
+            #my_min_snap.set_acc_cons(self.acc_cons)
+            my_min_snap.set_o_cons(self.o_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
 
+            #print(self.traj_struct)
             '''
             with open('traj_struct.csv', 'w') as csvfile:
                 csvwriter = csv.writer(csvfile)
@@ -115,7 +115,7 @@ class WorldTrajMod(object):
                     break
 
         flat_output = {'x': self.x, 'x_dot': self.x_dot, 'x_ddot': self.x_ddot, 'x_dddot': self.x_dddot,
-                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot}
+                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot, 'quad_o': self.quad_o}
         # print('flat output: ', flat_output)
         return flat_output
 
@@ -132,10 +132,14 @@ class WorldTrajMod(object):
             if self.i == 2: #reset starting location after np.inf passes
                 self.x = self.start
                 self.i = self.i + 1
+                self.quad_o = self.o_cons[0]
             elif t > self.traj_struct[0][-1]: #stop once last waypoint reached
-                self.x_dot = float(0) * self.x_dot
+                self.x_dot = float(0)*self.x_dot
+                self.x_ddot = float(0)*self.x_ddot
+                self.x_dddot = float(0)*self.x_dddot
                 self.x = self.end
                 self.t_start = t
+                self.quad_o = self.o_cons[-1]
             else:
                 #print(t)
                 #for j in range(len(self.traj_struct[0])-1): #per waypoint
@@ -145,6 +149,7 @@ class WorldTrajMod(object):
                         self.x_dot = np.array([])
                         self.x_ddot = np.array([])
                         self.x_dddot = np.array([])
+                        self.quad_o = self.traj_struct[4][j]
 
                         T = t
                         if j != 0: #get time segment time, not cumulative time
@@ -161,7 +166,7 @@ class WorldTrajMod(object):
                             self.x_dddot = np.append(self.x_dddot, np.polyval(np.array(jerk), T))
                         break
         flat_output = {'x': self.x, 'x_dot': self.x_dot, 'x_ddot': self.x_ddot, 'x_dddot': self.x_dddot,
-                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot}
+                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot, 'quad_o': self.quad_o}
         return flat_output
 
     def get_distance(self, p1, p2):  # return distance between two points

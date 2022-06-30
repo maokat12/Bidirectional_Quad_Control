@@ -44,7 +44,7 @@ my_se3_control = HopfFibrationControl(quad_params)
 # Map Traj Object
 #my_world_traj = WorldTraj(world, start, goal) #for forced circle trajectories
 
-# Waypoint Trajectory Object
+# Waypoint Trajectory Objectz
 my_waypoint_traj = WaypointTraj(start, 2, 1, 0, 8, 2, 'circle')
 cons = my_waypoint_traj.get_contraints()
 
@@ -52,18 +52,37 @@ cons = my_waypoint_traj.get_contraints()
 des_thrust = quad_params['k_thrust']*4*(1*quad_params['rotor_speed_max'])**2
 pos = np.array([[0, -1, 0], [0, 0, 4], [0, 3.5, 4],  [0, 4, 4], [0, 4.5, 4], [0, 8, 4], [0, 9, 0]])
 #acc = np.array([[0, 0, des_thrust/quad_params['mass']*(0-9.81), 2], [0, 0, des_thrust/quad_params['mass']*(0-9.81), 3], [0, 0, des_thrust/quad_params['mass']*(0-9.81), 4]])
-pos = np.array([[0, -1, 0], [0, 0, 4], [0, 4, 4], [0, 8, 4], [0, 9, 0]])
-acc = np.array([[0, 0, des_thrust/quad_params['mass']*(-0-9.81), 2]])
-cons = (pos, acc)
+pos = np.array([[0, -1, -1], [0, 0, 4], [0, 4, 4], [0, 8, 4], [0, 9, -1]])
+#acc = np.array([[0, 0, des_thrust/quad_params['mass']*(-0-9.81), 2]]) #[-1, -1, -g] - -1: not specified
+acc = np.array([[-1, -1, -9.81, 1], [-1, -1, -9.81, 3]])
+#o = np.array([-1, -1, -1, -1, -1])
+o = np.array([1,-1,-1,1,1])
+
+#pos = np.array([[0, 0, 0],[0, 0, 0]])
+#o = np.array([-1,-1,-1])
+
+cons = (pos, acc, o)
+#start = [5, 0, 0]
 start = pos[0]
+goal = pos[-1]
 
 my_world_traj = WorldTrajMod(world, start, cons) #for min snap w/body angle control
 
 # Set simulation parameters.
-t_final = 20
+t_final = 15
+
+#a = 0
+#b = 0
+#c = -1
+[a, b ,c] = [0, 0, o[0]]
+[a, b, c] = [a, b, c]/np.linalg.norm([a, b, c])
+if c > 0:
+    q = (1/np.sqrt(2*(1+c))) * np.array([-b,a,0, 1+c]) # [i,j,k,w]
+else:
+    q = 1/np.sqrt(2*(1-c)) * np.array([1-c, 0, a, -b]) # [i,j,k,w]
 initial_state = {'x': start,
                  'v': (0, 0, 0),
-                 'q': (0, 0, 0, 1), # [i,j,k,w]
+                 'q': q, #[i,j,k,w]
                  'w': (0, 0, 0)}
 
 # Perform simulation
@@ -81,7 +100,6 @@ flight_distance = np.sum(np.linalg.norm(np.diff(state['x'], axis=0),axis=1))
 # Print results.
 print(f"  Flight time:     {flight_time:.1f} seconds")
 print(f"  Flight distance: {flight_distance:.1f} meters")
-print('orientations', control['cmd_o'])
 
 # Plot Results
 # Position and Velocity vs. Time
@@ -105,6 +123,30 @@ ax.set_ylabel('velocity, m/s')
 ax.set_xlabel('time, s')
 ax.grid('major')
 
+# Force
+(fig, axes) = plt.subplots(nrows=2, ncols=1, sharex=True, num='Force vs Time')
+a_des = control['F_des']
+ax = axes[0]
+ax.plot(sim_time, a_des[:,0], 'r', sim_time, a_des[:,1], 'g', sim_time, a_des[:,2], 'b')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.grid('major')
+ax.set_title('`f des`')
+abc_des = control['abc']
+ax = axes[1]
+ax.plot(sim_time, abc_des[:,0], 'r', sim_time, abc_des[:,1], 'g', sim_time, abc_des[:,2], 'b')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.grid('major')
+ax.set_title('b3 des')
+
+# Desired Body Rates
+(fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='Desired Body Rates vs Time')
+a_des = control['w_des']
+ax = axes
+ax.plot(sim_time, a_des[:,0], 'r.', sim_time, a_des[:,1], 'g.', sim_time, a_des[:,2], 'b.')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.grid('major')
+ax.set_title('w des')
+
 # Acceleration and Jerk vs Time
 (fig, axes) = plt.subplots(nrows=2, ncols=1, sharex=True, num='Acceleration vs Time')
 a_des = flat['x_ddot']
@@ -122,15 +164,11 @@ ax.set_ylabel('jerk, m/s')
 ax.set_xlabel('time, s')
 ax.grid('major')
 
-#f unit vector vs Time
+#b3 vector vs Time
 s = np.array([0, 0, 0])
-for i in flat['x_ddot']:
-    f = [i[0], i[1], i[2] + 9.81]
-    if np.linalg.norm(f) == 0: #acount for at rest
-        np.vstack([s, np.array([0, 0, -2])]) #impossible value for normed unit -> let user know
-    else:
-        unit = np.array([f])/np.linalg.norm(f)
-        s = np.vstack([s, unit])
+for i in state['q']:
+    b3 = Rotation.from_quat(i).apply(np.array([0, 0, 1]))
+    s = np.vstack([s, b3])
 s = np.delete(s, 1, 0)
 (fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='Unit Orientation vs Time')
 ax = axes
@@ -139,7 +177,7 @@ ax.legend(('a', 'b', 'c'), loc='upper right')
 ax.set_ylabel('coordinate position, rad/s')
 ax.set_xlabel('time, s')
 ax.grid('major')
-ax.set_title('Unit Force Vector')
+ax.set_title('b3')
 
 # Orientation and Angular Velocity vs. Time
 (fig, axes) = plt.subplots(nrows=2, ncols=1, sharex=True, num='Orientation vs Time')
@@ -181,7 +219,7 @@ ax.plot(sim_time, T, 'k.')
 ax.set_ylabel('thrust, N')
 ax.set_xlabel('time, s')
 ax.grid('major')
-
+'''
 #Quad Orientation and Time
 (fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='Quad Orientation vs Time')
 s = control['cmd_o']
@@ -192,13 +230,58 @@ ax.set_ylabel('orientation')
 ax.set_xlabel('time (s)')
 ax.grid('major')
 ax.set_title('Quad Orientation')
+'''
+#Sign Force and Time
+(fig, axes) = plt.subplots(nrows=4, ncols=1, sharex=True, num='Quad Orientation vs Time')
+s = control['sign_f']
+ax = axes[0]
+ax.plot(sim_time, s)
+#ax.legend(('orientation'), loc='upper right')
+ax.set_ylabel('sign_f')
+ax.set_xlabel('time (s)')
+ax.grid('major')
+ax.set_title('Force Direction')
+
+s = control['cmd_o']
+ax = axes[1]
+ax.plot(sim_time, s)
+ax.set_ylabel('cmd_o')
+ax.set_xlabel('time (s)')
+ax.grid('major')
+ax.set_title('Quad Direction')
+
+abc_des = control['abc']
+ax = axes[2]
+ax.plot(sim_time, abc_des[:,0], 'r.', sim_time, abc_des[:,1], 'g.', sim_time, abc_des[:,2], 'b.')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.grid('major')
+ax.set_title('b3 des')
+
+a_des = control['w_des']
+ax = axes[3]
+ax.plot(sim_time, a_des[:,0], 'r.', sim_time, a_des[:,1], 'g.', sim_time, a_des[:,2], 'b.')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.grid('major')
+ax.set_title('w des')
+
+#z_ddot vs y_ddot
+# Desired Body Rates
+(fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='y_ddot vs z_ddot')
+a_des = control['r_des']
+ax = axes
+ax.plot(a_des[:,1], a_des[:,2], 'r.')
+ax.plot(a_des[0,1], a_des[0,2], 'go', markersize=8, markeredgewidth=3, markerfacecolor='none')
+ax.plot(a_des[-1,2], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.plot(0, -9.81, 'bo', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.grid('major')
+ax.set_title('y_ddot vs z_ddot des')
 
 # 3D Paths
 fig = plt.figure('3D Path')
 ax = Axes3Ds(fig)
 world.draw_custom_world(ax)
 ax.plot([start[0]], [start[1]], [start[2]], 'go', markersize=16, markeredgewidth=3, markerfacecolor='none')
-#ax.plot( [goal[0]],  [goal[1]],  [goal[2]], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.plot( [goal[0]],  [goal[1]],  [goal[2]], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
 world.draw_line(ax, flat['x'], color='black', linewidth=2)
 world.draw_points(ax, state['x'], color='blue', markersize=4)
 ax.legend(handles=[
@@ -209,8 +292,8 @@ ax.legend(handles=[
 # Animation (Slow)
 # Instead of viewing the animation live, you may provide a .mp4 filename to save.
 R = Rotation.from_quat(state['q']).as_matrix()
-filename = "min_snap_path_kr_3700.mp4"
-#filename = None
+#filename = "min_snap_path_kr_3700.mp4"
+filename = None
 ani = animate(sim_time, state['x'], R, world=world, filename=filename)
 plt.show()
 

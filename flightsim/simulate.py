@@ -84,7 +84,8 @@ def simulate(initial_state, quadrotor, controller, trajectory, t_final, terminat
         if exit_status:
             break
         time.append(time[-1] + t_step)
-        state.append(quadrotor.step(state[-1], control[-1]['cmd_motor_speeds'], t_step, control[-1]['cmd_m']))
+        #print('time', time[-1])
+        state.append(quadrotor.step(state[-1], control[-1]['cmd_motor_speeds'], t_step, control[-1]['cmd_m'], control[-1]['cmd_o']))
         flat.append(sanitize_trajectory_dic(trajectory.update(time[-1])))
         control.append(sanitize_control_dic(controller.update(time[-1], state[-1], flat[-1])))
 
@@ -104,7 +105,9 @@ def merge_dicts(dicts_in):
     dict_out = {}
     for k in dicts_in[0].keys():
         dict_out[k] = []
+        i = 0
         for d in dicts_in:
+            i = i+1
             dict_out[k].append(d[k])
         dict_out[k] = np.array(dict_out[k])
     return dict_out
@@ -126,6 +129,7 @@ def quat_dot(quat, omega):
                   [ q1, -q0,  q3, -q2]])
     quat_dot = 0.5 * G.T @ omega
     # Augment to maintain unit quaternion.
+    ## TODO - where the fuck does this come from? it's not in the graf document
     quat_err = np.sum(quat**2) - 1
     quat_err_grad = 2 * quat
     quat_dot = quat_dot - quat_err * quat_err_grad
@@ -239,7 +243,7 @@ class Quadrotor(object):
         self.inv_inertia = inv(self.inertia)
         self.weight = np.array([0, 0, -self.mass*self.g])
 
-    def step(self, state, cmd_rotor_speeds, t_step, cmd_motor_signs):
+    def step(self, state, cmd_rotor_speeds, t_step, cmd_motor_signs, quad_o):
         """
         Integrate dynamics forward from state given constant cmd_rotor_speeds for time t_step.
         """
@@ -248,25 +252,25 @@ class Quadrotor(object):
         rotor_speeds = np.clip(cmd_rotor_speeds, self.rotor_speed_min, self.rotor_speed_max)
 
         # Compute individual rotor thrusts and net thrust and net moment.
-        rotor_thrusts = self.k_thrust * np.multiply(rotor_speeds**2, cmd_motor_signs)
+        rotor_thrusts = self.k_thrust*np.multiply(rotor_speeds**2, cmd_motor_signs)
         TM = self.to_TM @ rotor_thrusts
         T = TM[0]
         M = TM[1:4]
-
         # Form autonomous ODE for constant inputs and integrate one time step.
         def s_dot_fn(t, s):
-            return self._s_dot_fn(t, s, T, M)
+            return self._s_dot_fn(t, s, T, M, quad_o)
         s = Quadrotor._pack_state(state)
         sol = scipy.integrate.solve_ivp(s_dot_fn, (0, t_step), s, first_step=t_step)
         s = sol['y'][:,-1]
         state = Quadrotor._unpack_state(s)
+        #print('\n')
 
         # Re-normalize unit quaternion.
         state['q'] = state['q'] / norm(state['q'])
 
         return state
 
-    def _s_dot_fn(self, t, s, u1, u2):
+    def _s_dot_fn(self, t, s, u1, u2, quad_o):
         """
         Compute derivative of state for quadrotor given fixed control inputs as
         an autonomous ODE.
@@ -278,16 +282,20 @@ class Quadrotor(object):
         x_dot = state['v']
 
         # Velocity derivative.
-        F = u1 * Quadrotor.rotate_k(state['q'])
-        v_dot = (self.weight + F) / self.mass
+        b3 = Rotation.from_quat(state['q']).apply(np.array([0, 0, 1]))
+        F = u1 * Quadrotor.rotate_k(state['q']) #determined through motor speeds - sign should be correct
+        v_dot = (self.weight + F) / self.mass #weight is negative
 
         # Orientation derivative.
         q_dot = quat_dot(state['q'], state['w'])
 
-        # Angular velocity derivative.
-        omega = state['w']
+        # Angular velocity derivative
+        omega = state['w']#*quad_o
         omega_hat = Quadrotor.hat_map(omega)
         w_dot = self.inv_inertia @ (u2 - omega_hat @ (self.inertia @ omega))
+
+        #print('w_dot', w_dot)
+        #input()
 
         # Pack into vector of derivatives.
         s_dot = np.zeros((13,))

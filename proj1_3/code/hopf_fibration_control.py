@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as Rotation
+import csv
+from pyquaternion import Quaternion
 
 class HopfFibrationControl(object):
     """
@@ -91,6 +93,11 @@ class HopfFibrationControl(object):
         #kr - 430 430 131
         k_r = 3700
 
+        k_p = 5
+        k_d = 3.5
+        k_w = 23
+        k_r = 430
+
         self.K_p = np.array([[k_p, 0, 0],
                              [0, k_p, 0],
                              [0, 0, k_p]])
@@ -103,9 +110,9 @@ class HopfFibrationControl(object):
                              [0, 72, 0],
                              [0, 0, 72]])
 
-        self.K_r = np.array([[k_r, 0, 0],
-                             [0, k_r, 0],
-                             [0, 0, k_r]])
+        self.K_r = np.array([[430, 0, 0],
+                             [0, 430, 0],
+                             [0, 0, 131]])
         self.i = 0
 
     def vee_map(self, R):
@@ -113,6 +120,80 @@ class HopfFibrationControl(object):
         b = R[0][2]
         a = R[2][1]
         return np.array([a, b, c])
+
+    def get_q(self, abc, yaw):
+        [a, b, c] = abc
+        yaw_n = np.radians(yaw)
+        q_des = None
+
+        if c > 0: #north chart
+            q_abc = (1/np.sqrt(2*(1+c))) * np.array([1+c, -b, a, 0])
+            q_yaw_n = np.array([np.cos(yaw_n/2), 0, 0, np.sin(yaw_n/2)])
+            q_abc = Quaternion(np.array(q_abc))
+            q_yaw_n = Quaternion(np.array(q_yaw_n))
+            q_des = q_abc * q_yaw_n
+        else: #c <= 0
+            yaw_s = 2*np.arctan2(a, b) + yaw_n
+            q_abc_bar = (1/np.sqrt(2*(1-c))) * np.array([-b, 1-c, 0, a])
+            q_yaw_s = np.array([np.cos(yaw_s/2), 0, 0, np.sin(yaw_s/2)])
+            q_abc_bar = Quaternion(np.array(q_abc_bar))
+            q_yaw_s = Quaternion(np.array(q_yaw_s))
+            q_des = q_abc_bar * q_yaw_s
+
+        return q_des
+
+    def get_w(self, abc, yaw, F_des, r_dddot, sign_o):
+        sign_f = 1 if F_des[2] > 0 else -1
+        F_des = np.array([[F_des[0]],
+                          [F_des[1]],
+                          [F_des[2]]])
+        F_dot = self.mass*r_dddot
+        a = abc[0]
+        b = abc[1]
+        c = abc[2]
+        yaw_n = np.radians(yaw)
+
+        abc_dot = sign_o * sign_f * (F_des.T@F_des*np.identity(3) - F_des@F_des.T)/np.linalg.norm(F_des)**3 @ F_dot
+        [a_dot, b_dot, c_dot] = abc_dot
+
+        if c > 0:
+            w1_n = np.sin(yaw_n)*a_dot - np.cos(yaw_n)*b_dot - (a*np.sin(yaw_n) - b*np.cos(yaw_n)) * c_dot/(1+c)
+            w2_n = np.cos(yaw_n)*a_dot + np.sin(yaw_n)*b_dot - (a*np.cos(yaw_n) + b*np.sin(yaw_n)) * c_dot/(1+c)
+            w3_n = 0
+            return [w1_n, w2_n, w3_n]
+        else: #c <= 0:
+            yaw_s = 2*np.arctan2(a, b) + yaw_n
+            w1_s = np.sin(yaw_s)*a_dot + np.cos(yaw_s)*b_dot - (a*np.sin(yaw_s) + b*np.cos(yaw_s)) * c_dot/(c-1)
+            w2_s = np.cos(yaw_s)*a_dot - np.sin(yaw_s)*b_dot - (a*np.cos(yaw_s) - b*np.sin(yaw_s)) * c_dot/(c-1)
+            w3_s = 0
+            return [w1_s, w2_s, w3_s]
+
+    def get_abc_yaw(self, q): #for debugging only
+        q = Rotation.from_quat(q)
+        abc = q.apply(np.array([0, 0, 1]))
+        a = abc[0]
+        b = abc[1]
+        c = abc[2]
+
+        q_abc = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
+        q_abc = np.hstack((q_abc[1:4], q_abc[0]))
+        q_abc = Rotation.from_quat(q_abc)
+        q_abc_inv = q_abc.inv()
+        #q_abc_inv = q_abc * np.array([1, -1, -1, -1])
+        #q_abc_inv = np.hstack((q_abc_inv[1:4], q_abc_inv[0])) #xi + yj + zk + w
+        #q_abc_inv = Rotation.from_quat(q_abc_inv)
+
+        q_yaw = q_abc_inv * q
+        q_yaw = q_yaw.as_quat()
+        yaw = np.arctan2(q_yaw[2], q_yaw[3])*2
+
+        print('get abc yaw function')
+        print('q_abc', q_abc.as_quat())
+        print('q_abc_inv', q_abc_inv.as_quat())
+        print('identity', (q_abc*q_abc_inv).as_quat())
+        print('abc', abc)
+        print('q_yaw', q_yaw)
+        print('yaw', yaw)
 
     def quaternion_multiply(self, Q0, Q1):
         """
@@ -191,109 +272,57 @@ class HopfFibrationControl(object):
         print('time: ', t)
         print('current location: ', state["x"])
         print('desired location: ', flat_output["x"])
-        print('desired velocity: ', flat_output["x_dot"])
+        print('desired velocity: ', flat_output["x_dot"])j
         '''
-        r_dott_des = flat_output["x_ddot"] - np.matmul(self.K_d, (state["v"]-flat_output["x_dot"])) - np.matmul(self.K_p, (state["x"] - flat_output["x"])) #desired acceleration
-        #print('r dotdot des: ', r_dott_des)
+
+        self.K_d = np.identity(3)*0
+        self.K_p = np.identity(3)*0
+
+        r_dott_des = flat_output["x_ddot"] - self.K_d@(state["v"]-flat_output["x_dot"]) - self.K_p@(state["x"] - flat_output["x"]) #desired acceleration
         F_des = (self.mass*r_dott_des + np.array([0, 0, self.mass*self.g]))#desired force
-        #print('F des: ', F_des)
 
-        #calculate rotaiton matrix from input quaternion
+        #calculate rotation matrix from input quaternion
         R = Rotation.from_quat(state["q"]).as_matrix()
-        #print('R: ', R)
 
-        #unit vector of desired force/b3
-        [a, b, c] = self.quad_sign*F_des / np.linalg.norm(F_des)
-        # print('a: ', a, ', b: ', b, ', c: ', c)
+        sign_f = 1 if F_des[2] > 0 else -1
+        [a, b, c] = flat_output['quad_o'] * sign_f * F_des / np.linalg.norm(F_des)
 
         yaw = flat_output["yaw"]
-        #print('c', c)
 
-        q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
-        q_abc = (1/np.sqrt(2*(1+c))) * np.array([1+c,-b,a,0]) #w + xi + yj + zk
-        #q_abc = None
-        #q_yaw = None
-        q_abc_bar_inv = None
+        q_des = self.get_q([a, b,c], yaw) #yaw in degree
+        R_des = q_des.rotation_matrix
 
-        #calculate yaw/q_abc based on desired quat map
-        if c <= 0 and self.quad_sign == 1:  # quad cross from upright to inverse
-            q_abc_bar = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
-            q_abc_bar_inv = q_abc_bar * np.array([1, -1, -1, -1])
-            q_yaw = self.quaternion_multiply(q_abc_bar_inv, self.quaternion_multiply(q_abc, q_yaw))
-            q_abc = q_abc_bar
-            #yaw = np.arctan2(a, b) + yaw
-            self.quad_sign = -1
-            print('flip to inverse!')
-        elif c >= 0 and self.quad_sign == -1:  # quad cross from inverse to upright
-            q_abc = 1 / np.sqrt(2 * (1 + c)) * np.array([1 + c, -b, a, 0])
-            #yaw = np.arctan2(a, b) + yaw
-            #yaw kept as is
-            self.quad_sign = 1
-            print('flip to upright!')
-        elif c <= 0 and self.quad_sign == -1: #quad stays inverted
-            if c + 1 < 0.000001: ## temp fix to below issue -> need more permanent solution in the future
-                q_abc = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
-                yaw = np.arctan2(a, b) + yaw
-                q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
-                #print('a')
-            else:
-                # TODO - this method fails at c = -1 -> hits singularity -> temp fix in-*- above if statement
-                q_abc_bar = 1/np.sqrt(2*(1-c)) * np.array([-b, 1-c, 0, a])
-                q_abc_bar_inv = q_abc_bar * np.array([1, -1, -1, -1])
-                q_yaw = self.quaternion_multiply(q_abc_bar_inv, self.quaternion_multiply(q_abc, q_yaw))
-                q_abc = q_abc_bar
-            # TODO - this method isn't giving the same results as ^ method
-            #yaw = np.arctan2(a, b) + yaw
-            #q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
-            #print(3)
-        elif c >= 0 and self.quad_sign == 1: #quad stays upright
-            q_abc = 1 / np.sqrt(2 * (1 + c)) * np.array([1+c, -b, a, 0])
-            q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
-            #print(4)
-            # yaw is kept as is
+        w_des = self.get_w([a, b, c], yaw, F_des, flat_output['x_dddot'], flat_output['quad_o'])
 
-        #q_yaw = np.array([np.cos(yaw/2), 0, 0, np.sin(yaw/2)]) #w + xi + yj + zk
-        q_des = self.quaternion_multiply(q_abc, q_yaw) #w + xi + yj + zk
-        q_des = np.hstack((q_des[1:4], q_des[0])) #xi + yj + zk + w
-        try:
-            R_des = Rotation.from_quat(q_des).as_matrix() #from quat takes xi + yj + zk + w
-        except:
-            print('set')
-            print('q_des',q_des)
-            print('q_abc',q_abc)
-            print('q_yaw',q_yaw)
-            print('yaw',yaw)
-            print(c)
-            print(self.quad_sign)
-            print(q_abc_bar_inv)
-            exit()
         e_R = 0.5 * self.vee_map(R_des.T@R - R.T@R_des)
-        e_W = state["w"] - 0  # let w_des = 0 for now
+        e_W = state["w"] - w_des  # let w_des = 0 for now <- this assumption might not hold for flipping?
 
-        # print('error R: ', e_R)
-        # print('state w', state['w'])
-        # print('w des', w_des)
-        # print('error W:', e_W)
+        #debugging outputs for MATLAB
+        #write R_des * e3 and R * e3 to csv file
+        with open("b3.csv", 'a+', newline = '') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            b3_des = Rotation.from_matrix(R_des).apply(np.array([0, 0, 1]))
+            b3 = Rotation.from_matrix(R).apply(np.array([0, 0, 1]))
+            x = np.hstack([r_dott_des, flat_output["x_dddot"]])
+            #x = np.vstack((x, np.zeros((2, 9))))
+            #x = np.hstack([x, R_des, R])
+            #for i in x:
+            #    csvwriter.writerow(i)
+            csvwriter.writerow(x)
 
         #desired inputs
         b3 = R @ np.array([[0], [0], [1]])
         u1 = np.matmul(b3.T, F_des)
-        u2 = self.inertia @ (-np.matmul(self.K_r, e_R) - np.matmul(self.K_w, e_W))
-
-        #print('u1: ', u1)
-        #print('u2: ', u2)
+        u2 = self.inertia @ (-np.matmul(self.K_r, e_R) - np.matmul(self.K_w, e_W)) #consider changing in future TODO
 
         #calculate corresponding forces
         u = np.array([u1[0], u2[0], u2[1], u2[2]]) #input matrix
 
-        #print('u: ', u)
         #follows the mellinger paper
         K = np.array([[self.k_thrust, self.k_thrust, self.k_thrust, self.k_thrust],
                       [0, self.k_thrust*self.arm_length, 0, -self.k_thrust*self.arm_length],
                       [-self.k_thrust*self.arm_length, 0, self.k_thrust*self.arm_length, 0],
                       [self.k_drag, -self.k_drag, self.k_drag, -self.k_drag]])
-
-        #print('K: ', K)
 
         cmd_motor_speeds = np.matmul(np.linalg.inv(K),u) #motor speeds^2
 
@@ -310,20 +339,20 @@ class HopfFibrationControl(object):
         cmd_motor_speeds = np.sqrt(abs(cmd_motor_speeds))*motor_signs
 
         #print('cmd motor speeds: ', cmd_motor_speeds)
+        #print('cmd motor signs: ', motor_signs)
         #print('cmd thrust: ', cmd_thrust)
         #print('cmd moment: ', cmd_moment)
-
-        cmd_q = q_des
 
         control_input = {'cmd_motor_speeds':cmd_motor_speeds,
                          'cmd_thrust':cmd_thrust,
                          'cmd_moment':cmd_moment,
-                         'cmd_q':cmd_q,
-                         'cmd_o':self.quad_sign,
-                         'cmd_m':motor_signs}
+                         'cmd_q':q_des.elements,
+                         'cmd_o':flat_output['quad_o'],
+                         'cmd_m':motor_signs,
+                         'F_des':F_des,
+                         'abc':[a, b, c],
+                         'sign_f':sign_f,
+                         'r_des':r_dott_des,
+                         'w_des':w_des}
 
-        #exit()
-        #if self.i == 400:
-            #exit()
-        #self.i = self.i +1
         return control_input

@@ -8,7 +8,6 @@ class MinSnap(object):
         # vel_max (m/s) - max/min velocity quad can travel
         # dist_threshold (m) - corridor radius for quad to stray
 
-        self.points = points
         self.distances = []
         self.time_segments = []
         self.time_cumulative = []
@@ -16,16 +15,15 @@ class MinSnap(object):
         self.dist_vel = dist_vel
         self.vel_max = vel_max
         self.dist_threshold = dist_threshold
-        self.plt = False
+        self.plt = False #plot min snap before sent to controller
+
+        #set constraints
+        self.points = points
         self.start = self.points[0]
         self.acc_cons = None
         self.no_acc_cons = True
-
-        #remove second point in maze
-        #print(self.points)
-        #self.points = np.delete(self.points, 1, 0)
-        #print(self.points)
-        #exit()
+        self.o_cons = None
+        self.no_o_cons = True
 
     def get_distance(self, p1, p2):  # return distance between two points
         p1 = np.array(p1)
@@ -34,6 +32,19 @@ class MinSnap(object):
         return dist
 
     def set_acc_cons(self, acc_cons):
+        self.acc_cons = acc_cons
+        self.no_acc_cons = False
+
+    def set_o_cons(self, o_cons):
+        self.o_cons = o_cons
+        self.no_o_cons = False
+
+        acc_cons = np.array(np.zeros(4))
+        for i in range(1, len(o_cons)):
+            if o_cons[i-1] != o_cons[i]:
+                acc_cons = np.vstack((acc_cons, [0, 0, -9.81, i]))
+        acc_cons = np.delete(acc_cons, 0, 0)
+        print(acc_cons)
         self.acc_cons = acc_cons
         self.no_acc_cons = False
 
@@ -55,6 +66,7 @@ class MinSnap(object):
         return H
 
     def get_Aeq(self):
+
         A_eq_start = np.array([[0, 0, 0, 0, 0, 0, 0, 1],
                                [0, 0, 0, 0, 0, 0, 1, 0],
                                [0, 0, 0, 0, 0, 2, 0, 0],
@@ -70,8 +82,10 @@ class MinSnap(object):
         beq_x = np.array([self.points[0][0], 0, 0, 0, self.points[-1][0], 0, 0, 0])
         beq_y = np.array([self.points[0][1], 0, 0, 0, self.points[-1][1], 0, 0, 0])
         beq_z = np.array([self.points[0][2], 0, 0, 0, self.points[-1][2], 0, 0, 0])
-        #intermediary constraints for 1+ segments
-        if self.num_segments > 1:
+
+        if self.num_segments == 1:
+            return A_eq, A_eq, A_eq, beq_x, beq_y, beq_z
+        else: #intermediary constraints for 1+ segments
             #waypoints constraints
             for i in range(self.num_segments-1):
                 T = self.time_segments[i]
@@ -84,8 +98,8 @@ class MinSnap(object):
                 beq_x = np.hstack((beq_x, self.points[i+1][0], self.points[i+1][0]))
                 beq_y = np.hstack((beq_y, self.points[i+1][1], self.points[i+1][1]))
                 beq_z = np.hstack((beq_z, self.points[i+1][2], self.points[i+1][2]))
-
-            if self.no_acc_cons: #no acceleration constraints
+            #no acceleration constraints
+            if self.no_acc_cons:
                 #continuity constraints
                 for i in range(self.num_segments-1):
                     T = self.time_segments[i]
@@ -101,51 +115,78 @@ class MinSnap(object):
                     beq_x = np.hstack((beq_x, np.zeros(3)))
                     beq_y = np.hstack((beq_y, np.zeros(3)))
                     beq_z = np.hstack((beq_z, np.zeros(3)))
-            else: #acceleration constraints
-                #j = 0
+                return A_eq, A_eq, A_eq, beq_x, beq_y, beq_z
+            #acceleration constraint
+            else:
+                A_eq_x = A_eq
+                A_eq_y = A_eq
+                A_eq_z = A_eq
                 for i in range(self.num_segments-1):
                     T = self.time_segments[i]
-                    A_eq_sub_LHS = np.block([[7*T**6, 6*T**5, 5*T**4, 4*T**3, 3*T**2, 2*T, 1, 0],
-                                             [42*T**5, 30*T**4, 20*T**3, 12*T**2, 6*T, 2, 0, 0]])
+                    A_eq_sub_LHS = np.block([[7*T**6, 6*T**5, 5*T**4, 4*T**3, 3*T**2, 2*T, 1, 0], #velocity
+                                             [210*T**4, 120*T**3, 60*T**2, 24*T, 6, 0, 0, 0]]) #jerk
                     A_eq_sub_RHS = np.block([[0, 0, 0, 0, 0, 0, -1, 0],
-                                             [0, 0, 0, 0, 0, -2, 0, 0]])
+                                             [0, 0, 0, 0, -6, 0, 0, 0]])
                     A_eq_sub = np.block([np.zeros((2,8*i)), A_eq_sub_LHS, A_eq_sub_RHS, np.zeros((2, 8*(self.num_segments-(i+2))))])
-                    A_eq = np.vstack((A_eq,
-                                      A_eq_sub))
+
+                    A_eq_x = np.vstack((A_eq_x,A_eq_sub))
+                    A_eq_y = np.vstack((A_eq_y,A_eq_sub))
+                    A_eq_z = np.vstack((A_eq_z,A_eq_sub))
                     beq_x = np.hstack((beq_x, np.zeros(2)))
                     beq_y = np.hstack((beq_y, np.zeros(2)))
                     beq_z = np.hstack((beq_z, np.zeros(2)))
                     
                     #check if there's an acceleration constraint for this waypoint
+                    #you're constraining jerk right now dumbass
                     acc_con_index = np.where(self.acc_cons[:, 3] == (i+1))
-                    if len(acc_con_index[0]) == 1: #position found, value should only ever be 1
-                        index = acc_con_index[0][0]
-                        A_eq_sub_LHS = np.array([210*T**4, 120*T**3, 60*T**2, 24*T, 6, 0, 0, 0])
-                        A_eq_sub_RHS = np.array([0, 0, 0, 0, -6, 0, 0, 0])
-                        A_eq_sub = np.block([[np.zeros(8*i), A_eq_sub_LHS, np.zeros(8*(self.num_segments-(i+1)))],
-                                             [np.zeros(8*(i+1)), A_eq_sub_RHS, np.zeros(8*(self.num_segments-(i+2)))]])
-                        A_eq = np.vstack((A_eq,
-                                          A_eq_sub))
-                        beq_x = np.hstack((beq_x, self.acc_cons[index][0], self.acc_cons[index][0]))
-                        beq_y = np.hstack((beq_y, self.acc_cons[index][1], self.acc_cons[index][1]))
-                        beq_z = np.hstack((beq_z, self.acc_cons[index][2], self.acc_cons[index][2]))
-        '''
-        import csv
-        with open('a_eq.csv', 'w') as csvfile:
-            # creating a csv writer object
-            csvwriter = csv.writer(csvfile)
-            # writing the data rows
-            #a = np.hstack([x, x_des, a_des])
-            csvwriter.writerows(A_eq)
-        with open('b_eq.csv', 'w') as csvfile:
-            # creating a csv writer object
-            csvwriter = csv.writer(csvfile)
-            # writing the data rows
-            a = np.vstack([beq_x, beq_y, beq_z])
-            csvwriter.writerows(a)
-        '''
-        #exit()
-        return A_eq, beq_x, beq_y, beq_z
+                    if len(acc_con_index[0]) == 1: #acc constraint at this waypoint found
+                        index = acc_con_index[0][0] #get index value
+                        for j in range(3): #cycle through x(0),y(1),z(2)
+                            #no specified acceleration
+                            if self.acc_cons[index][j] == -1:
+                                #add normal continuity constraint
+                                A_eq_sub_LHS = np.block([[42*T**5, 30*T**4, 20*T**3, 12*T**2, 6*T, 2, 0, 0]])
+                                A_eq_sub_RHS = np.block([[0, 0, 0, 0, 0, -2, 0, 0]])
+                                A_eq_sub = np.block([np.zeros((1,8*i)), A_eq_sub_LHS, A_eq_sub_RHS, np.zeros((1, 8*(self.num_segments-(i+2))))])
+                                if j == 0: #x
+                                    A_eq_x = np.vstack((A_eq_x, A_eq_sub))
+                                    beq_x = np.hstack((beq_x, np.zeros(1)))
+                                elif j == 1: #y
+                                    A_eq_y = np.vstack((A_eq_y, A_eq_sub))
+                                    beq_y = np.hstack((beq_y, np.zeros(1)))
+                                else: #z
+                                    A_eq_z = np.vstack((A_eq_z,A_eq_sub))
+                                    beq_z = np.hstack((beq_z, np.zeros(1)))
+                            else:
+                                print('j', j)
+                                print(self.acc_cons[index][j])
+                                A_eq_sub_LHS = np.array([42*T**5, 30*T**4, 20*T**3, 12*T**2, 6*T, 2, 0, 0])
+                                A_eq_sub_RHS = np.array([0, 0, 0, 0, 0, -2, 0, 0])
+                                A_eq_sub = np.block([[np.zeros((1, 8*i)), A_eq_sub_LHS, np.zeros((1, 8*(self.num_segments-(i+1))))],
+                                                     [np.zeros((1, 8*(i+1))), A_eq_sub_RHS, np.zeros((1, 8*(self.num_segments-(i+2))))]])
+                                if j == 0: #x
+                                    A_eq_x = np.vstack((A_eq_x,A_eq_sub))
+                                    beq_x = np.hstack((beq_x, self.acc_cons[index][0], -self.acc_cons[index][0]))
+                                elif j == 1: #y
+                                    A_eq_y = np.vstack((A_eq_y,A_eq_sub))
+                                    beq_y = np.hstack((beq_y, self.acc_cons[index][1], -self.acc_cons[index][1]))
+                                else: #z
+                                    A_eq_z = np.vstack((A_eq_z,A_eq_sub))
+                                    beq_z = np.hstack((beq_z, self.acc_cons[index][2], -self.acc_cons[index][2]))
+                    else: #no acc constraint for this waypoint
+                    #add normal continuity constraint
+                        A_eq_sub_LHS = np.block([[42*T**5, 30*T**4, 20*T**3, 12*T**2, 6*T, 2, 0, 0]])
+                        A_eq_sub_RHS = np.block([[0, 0, 0, 0, 0, -2, 0, 0]])
+                        A_eq_sub = np.block([np.zeros((1,8*i)), A_eq_sub_LHS, A_eq_sub_RHS, np.zeros((1, 8*(self.num_segments-(i+2))))])
+
+                        A_eq_x = np.vstack((A_eq_x, A_eq_sub))
+                        beq_x = np.hstack((beq_x, np.zeros(1)))
+                        A_eq_y = np.vstack((A_eq_y, A_eq_sub))
+                        beq_y = np.hstack((beq_y, np.zeros(1)))
+                        A_eq_z = np.vstack((A_eq_z,A_eq_sub))
+                        beq_z = np.hstack((beq_z, np.zeros(1)))
+
+                return A_eq_x, A_eq_y, A_eq_z, beq_x, beq_y, beq_z
 
     def get_Aineq(self, vel_max, dist_threshold):
         #inequality constraints - position
@@ -227,6 +268,7 @@ class MinSnap(object):
             self.distances.append(dist)
         self.distances = np.array(self.distances)
         self.time_segments = self.distances/self.dist_vel
+        #self.time_segments = np.ones(len(self.distances)) * 5
 
         #add a little extra time to start and stop
         self.time_segments[0] = self.time_segments[0]+0.2
@@ -242,22 +284,27 @@ class MinSnap(object):
 
         #convert time segments to cumulative time
         self.time_cumulative = [sum(self.time_segments[0:i+1]) for i in range(self.num_segments)]
+        print(self.time_cumulative)
 
-        #get hessian,
-        #f = np.zeros((1, 8*self.num_segments))
+        #get hessian
         H = self.get_Hessian()
 
         #get A_eq
-        Aeq, beq_x, beq_y, beq_z = self.get_Aeq()
+        Aeq_x, Aeq_y, Aeq_z, beq_x, beq_y, beq_z = self.get_Aeq()
 
         #get A_ineq
         A, b_x, b_y, b_z = self.get_Aineq(self.vel_max, self.dist_threshold)
 
-        x_coeff = self.get_coeffs(Aeq, beq_x, A, b_x, H)
-        y_coeff = self.get_coeffs(Aeq, beq_y, A, b_y, H)
-        z_coeff = self.get_coeffs(Aeq, beq_z, A, b_z, H)
+        x_coeff = self.get_coeffs(Aeq_x, beq_x, A, b_x, H)
+        y_coeff = self.get_coeffs(Aeq_y, beq_y, A, b_y, H)
+        z_coeff = self.get_coeffs(Aeq_z, beq_z, A, b_z, H)
 
-        traj_struct = (self.time_cumulative, x_coeff, y_coeff, z_coeff)
+        #set orientation constraints
+        o_cons = np.ones(self.num_segments) #1 - upright, -1 - inverted
+        if not self.no_o_cons:
+            o_cons = self.o_cons
+
+        traj_struct = (self.time_cumulative, x_coeff, y_coeff, z_coeff, o_cons)
         #print('cum time', self.time_cumulative)
         #print('seg time', self.time_segments)
 
