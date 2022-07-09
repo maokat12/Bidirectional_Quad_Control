@@ -93,7 +93,7 @@ class HopfFibrationControl(object):
         #kr - 430 430 131
         k_r = 3700
 
-        k_p = 5
+        k_p = 4.5
         k_d = 3.5
         k_w = 23
         k_r = 430
@@ -121,28 +121,34 @@ class HopfFibrationControl(object):
         a = R[2][1]
         return np.array([a, b, c])
 
-    def get_q(self, abc, yaw):
+    def get_q(self, abc, yaw, mode):
         [a, b, c] = abc
         yaw_n = np.radians(yaw)
         q_des = None
+        #print('abc', abc)
+        #print(mode)
 
-        if c > 0: #north chart
+        if mode == 1 and c > -0.95: #north chart, but ensure we don't get too close to the singularity
             q_abc = (1/np.sqrt(2*(1+c))) * np.array([1+c, -b, a, 0])
             q_yaw_n = np.array([np.cos(yaw_n/2), 0, 0, np.sin(yaw_n/2)])
             q_abc = Quaternion(np.array(q_abc))
             q_yaw_n = Quaternion(np.array(q_yaw_n))
             q_des = q_abc * q_yaw_n
-        else: #c <= 0
+        else: #c <= 0 #south chart
             yaw_s = 2*np.arctan2(a, b) + yaw_n
-            q_abc_bar = (1/np.sqrt(2*(1-c))) * np.array([-b, 1-c, 0, a])
-            q_yaw_s = np.array([np.cos(yaw_s/2), 0, 0, np.sin(yaw_s/2)])
-            q_abc_bar = Quaternion(np.array(q_abc_bar))
-            q_yaw_s = Quaternion(np.array(q_yaw_s))
-            q_des = q_abc_bar * q_yaw_s
+            try:
+                q_abc_bar = (1/np.sqrt(2*(1-c))) * np.array([-b, 1-c, 0, a])
+                q_yaw_s = np.array([np.cos(yaw_s/2), 0, 0, np.sin(yaw_s/2)])
+                q_abc_bar = Quaternion(np.array(q_abc_bar))
+                q_yaw_s = Quaternion(np.array(q_yaw_s))
+                q_des = q_abc_bar * q_yaw_s
+            except:
+                print(mode)
+                print(abc)
 
         return q_des
 
-    def get_w(self, abc, yaw, F_des, r_dddot, sign_o):
+    def get_w(self, abc, yaw, F_des, r_dddot, quad_o, mode):
         sign_f = 1 if F_des[2] > 0 else -1
         F_des = np.array([[F_des[0]],
                           [F_des[1]],
@@ -153,19 +159,41 @@ class HopfFibrationControl(object):
         c = abc[2]
         yaw_n = np.radians(yaw)
 
-        abc_dot = sign_o * sign_f * (F_des.T@F_des*np.identity(3) - F_des@F_des.T)/np.linalg.norm(F_des)**3 @ F_dot
+        if quad_o == 1:
+            abc_dot = (F_des.T@F_des*np.identity(3) - F_des@F_des.T)/np.linalg.norm(F_des)**3 @ F_dot
+        else:
+            abc_dot = -1*(F_des.T@F_des*np.identity(3) - F_des@F_des.T)/np.linalg.norm(F_des)**3 @ F_dot
+
         [a_dot, b_dot, c_dot] = abc_dot
 
-        if c > 0:
+        if mode == 1 and c > -0.95: #north chart, but ensure we don't get too close to the singularity
             w1_n = np.sin(yaw_n)*a_dot - np.cos(yaw_n)*b_dot - (a*np.sin(yaw_n) - b*np.cos(yaw_n)) * c_dot/(1+c)
             w2_n = np.cos(yaw_n)*a_dot + np.sin(yaw_n)*b_dot - (a*np.cos(yaw_n) + b*np.sin(yaw_n)) * c_dot/(1+c)
             w3_n = 0
+
+            if w1_n > 100:
+                print('w1_n', w1_n)
+                print('w2_n', w2_n)
+                print('abc', abc)
+                print('F_des', F_des)
+                print('F_dot', F_dot)
+                print('abc dot', abc_dot)
+
             return [w1_n, w2_n, w3_n]
-        else: #c <= 0:
+        else: #mode <= 0: #south chart
             yaw_s = 2*np.arctan2(a, b) + yaw_n
             w1_s = np.sin(yaw_s)*a_dot + np.cos(yaw_s)*b_dot - (a*np.sin(yaw_s) + b*np.cos(yaw_s)) * c_dot/(c-1)
             w2_s = np.cos(yaw_s)*a_dot - np.sin(yaw_s)*b_dot - (a*np.cos(yaw_s) - b*np.sin(yaw_s)) * c_dot/(c-1)
             w3_s = 0
+
+            if w1_s > 100:
+                print('w1_n', w1_s)
+                print('w2_n', w2_s)
+                print('abc', abc)
+                print('F_des', F_des)
+                print('F_dot', F_dot)
+                print('abc dot', abc_dot)
+
             return [w1_s, w2_s, w3_s]
 
     def get_abc_yaw(self, q): #for debugging only
@@ -194,6 +222,24 @@ class HopfFibrationControl(object):
         print('abc', abc)
         print('q_yaw', q_yaw)
         print('yaw', yaw)
+
+    def get_des_traj(self, acc, mode, quad_o, yaw, jerk):
+        F_des = (self.mass*acc + np.array([0, 0, self.mass*self.g]))#desired force
+        F_mag = np.linalg.norm(F_des)
+        sign_f = 1 if F_des[2] > 0 else -1
+
+        if quad_o == 1:
+            [a, b, c] = F_des / np.linalg.norm(F_des)
+        else:
+            [a, b, c] = -1 * F_des / np.linalg.norm(F_des)
+        if c > 0:
+            mode = 1
+        else:
+            mode = -1
+
+        w_des = self.get_w([a, b, c], yaw, F_des, jerk, quad_o, mode)
+
+        return mode, sign_f, quad_o, a, b, c, F_des[0], F_des[1], F_des[2], w_des[0], w_des[1], w_des[2], F_mag
 
     def quaternion_multiply(self, Q0, Q1):
         """
@@ -275,45 +321,82 @@ class HopfFibrationControl(object):
         print('desired velocity: ', flat_output["x_dot"])j
         '''
 
-        self.K_d = np.identity(3)*0
-        self.K_p = np.identity(3)*0
+        #self.K_d = np.identity(3)*0
+        #self.K_p = np.identity(3)*0
+        quad_o = flat_output["quad_o"] #b3 parallel/antiparallel to F
+        mode = -1 #North/South Chart - constantly stay in the north chart in 1st pass
 
         r_dott_des = flat_output["x_ddot"] - self.K_d@(state["v"]-flat_output["x_dot"]) - self.K_p@(state["x"] - flat_output["x"]) #desired acceleration
         F_des = (self.mass*r_dott_des + np.array([0, 0, self.mass*self.g]))#desired force
+        F_mag = np.linalg.norm(F_des)
+        a_mag = flat_output["x_ddot"][2]+9.81
+        gain_mag = self.K_d@(state["v"]-flat_output["x_dot"]) + self.K_p@(state["x"]-flat_output["x"])
+        gain_mag = gain_mag[2]
 
         #calculate rotation matrix from input quaternion
         R = Rotation.from_quat(state["q"]).as_matrix()
+        abc_state = R @ np.array([[0], [0], [1]])
+        #print('abc_state', abc_state)
 
         sign_f = 1 if F_des[2] > 0 else -1
-        [a, b, c] = flat_output['quad_o'] * sign_f * F_des / np.linalg.norm(F_des)
+        if quad_o == 1:
+            [a, b, c] = F_des / np.linalg.norm(F_des)
+        else:
+            [a, b, c] = -1 * F_des / np.linalg.norm(F_des)
+
+        if c > 0:
+            mode = 1
+        else:
+            mode = -1
+
+        # little hack I added to override [a, b, c] when trajectory approaches the singularity to avoid gain errors
+        if F_mag < 0.01: #N
+            F_des = (self.mass*flat_output["x_ddot"] + np.array([0, 0, self.mass*self.g]))#desired force
+            F_mag = np.linalg.norm(F_des)
+            sign_f = 1 if F_des[2] > 0 else -1
+
+            if quad_o == 1:
+                [a, b, c] = F_des / np.linalg.norm(F_des)
+            else:
+                [a, b, c] = -1 * F_des / np.linalg.norm(F_des)
+            if c > 0:
+                mode = 1
+            else:
+                mode = -1
+
 
         yaw = flat_output["yaw"]
 
-        q_des = self.get_q([a, b,c], yaw) #yaw in degree
+
+        ideal_traj = self.get_des_traj(flat_output["x_ddot"], mode, quad_o, yaw, flat_output['x_dddot'])
+
+
+        q_des = self.get_q([a, b, c], yaw, mode) #yaw in degree
         R_des = q_des.rotation_matrix
 
-        w_des = self.get_w([a, b, c], yaw, F_des, flat_output['x_dddot'], flat_output['quad_o'])
+        w_des = self.get_w([a, b, c], yaw, F_des, flat_output['x_dddot'], quad_o, mode)
 
         e_R = 0.5 * self.vee_map(R_des.T@R - R.T@R_des)
-        e_W = state["w"] - w_des  # let w_des = 0 for now <- this assumption might not hold for flipping?
+        e_W = state["w"] - w_des
 
         #debugging outputs for MATLAB
         #write R_des * e3 and R * e3 to csv file
-        with open("b3.csv", 'a+', newline = '') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            b3_des = Rotation.from_matrix(R_des).apply(np.array([0, 0, 1]))
-            b3 = Rotation.from_matrix(R).apply(np.array([0, 0, 1]))
-            x = np.hstack([r_dott_des, flat_output["x_dddot"]])
+        #with open("check_gains.csv", 'a+', newline = '') as csvfile:
+            #csvwriter = csv.writer(csvfile)
+            #b3_des = Rotation.from_matrix(R_des).apply(np.array([0, 0, 1]))
+            #b3 = Rotation.from_matrix(R).apply(np.array([0, 0, 1]))
+            #x = np.hstack([r_dott_des, flat_output["x_dddot"]])
             #x = np.vstack((x, np.zeros((2, 9))))
             #x = np.hstack([x, R_des, R])
+            #x = np.hstack([t, r_dott_des[0], r_dott_des[1], r_dott_des[2], F_des[0], F_des[1], F_des[2], a, b, c, quad_o, w_des[0], w_des[1], w_des[2]])
             #for i in x:
             #    csvwriter.writerow(i)
-            csvwriter.writerow(x)
+            #csvwriter.writerow(x)
 
         #desired inputs
         b3 = R @ np.array([[0], [0], [1]])
         u1 = np.matmul(b3.T, F_des)
-        u2 = self.inertia @ (-np.matmul(self.K_r, e_R) - np.matmul(self.K_w, e_W)) #consider changing in future TODO
+        u2 = self.inertia @ (-np.matmul(self.K_r, e_R) - np.matmul(self.K_w, e_W))
 
         #calculate corresponding forces
         u = np.array([u1[0], u2[0], u2[1], u2[2]]) #input matrix
@@ -338,21 +421,23 @@ class HopfFibrationControl(object):
         cmd_moment = self.k_drag*cmd_motor_speeds #motor moments
         cmd_motor_speeds = np.sqrt(abs(cmd_motor_speeds))*motor_signs
 
-        #print('cmd motor speeds: ', cmd_motor_speeds)
-        #print('cmd motor signs: ', motor_signs)
-        #print('cmd thrust: ', cmd_thrust)
-        #print('cmd moment: ', cmd_moment)
-
         control_input = {'cmd_motor_speeds':cmd_motor_speeds,
                          'cmd_thrust':cmd_thrust,
                          'cmd_moment':cmd_moment,
                          'cmd_q':q_des.elements,
                          'cmd_o':flat_output['quad_o'],
                          'cmd_m':motor_signs,
+                         'mode':mode,
                          'F_des':F_des,
+                         'F_mag':F_mag,
                          'abc':[a, b, c],
                          'sign_f':sign_f,
                          'r_des':r_dott_des,
-                         'w_des':w_des}
+                         'w_des':w_des,
+                         'acc_des':r_dott_des,
+                         'ideal_traj':ideal_traj,
+                         'acc_plan':flat_output["x_ddot"],
+                         'a_mag':a_mag,
+                         'gain_mag':gain_mag}
 
         return control_input

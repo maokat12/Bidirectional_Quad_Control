@@ -19,6 +19,7 @@ class WorldTrajMod(object):
         self.max_vel = 5 #m/s,  #use 3.4 for naive
         self.dist_threshold = 1 #m
         self.x_dot = np.zeros((3,))
+
         self.x_ddot = np.zeros((3,))
         self.x_dddot = np.zeros((3,))
         self.x_ddddot = np.zeros((3,))
@@ -28,11 +29,13 @@ class WorldTrajMod(object):
         self.k = -1
         self.naive = False
         self.num_segments = None
+        self.acc_cons = None
 
         #break out constraints
         self.points = cons[0] #position constraint
-        self.acc_cons = cons[1] #orientation constraint
-        self.o_cons = cons[2] #upright vs inverse
+        self.o_cons = cons[1] #upright vs inverse
+        if len(cons) == 3: #acceleration constraint exists
+            self.acc_cons = cons[2]
 
         #declare start/stop
         self.start = self.points[0]  # m
@@ -47,8 +50,9 @@ class WorldTrajMod(object):
             self.traj_struct = self.naive_trajectory(self.points, self.start, self.x_dot, self.vel)
         else: #min snap
             my_min_snap = MinSnap(self.points, self.vel, self.max_vel, self.dist_threshold)
-            #my_min_snap.set_acc_cons(self.acc_cons)
             my_min_snap.set_o_cons(self.o_cons)
+            if len(cons) == 3:
+                my_min_snap.set_acc_cons(self.acc_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
 
             #print(self.traj_struct)

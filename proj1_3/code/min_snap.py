@@ -32,21 +32,23 @@ class MinSnap(object):
         return dist
 
     def set_acc_cons(self, acc_cons):
-        self.acc_cons = acc_cons
+        self.acc_cons = np.append(self.acc_cons, acc_cons)
         self.no_acc_cons = False
 
     def set_o_cons(self, o_cons):
         self.o_cons = o_cons
         self.no_o_cons = False
 
-        acc_cons = np.array(np.zeros(4))
-        for i in range(1, len(o_cons)):
-            if o_cons[i-1] != o_cons[i]:
-                acc_cons = np.vstack((acc_cons, [0, 0, -9.81, i]))
-        acc_cons = np.delete(acc_cons, 0, 0)
-        print(acc_cons)
-        self.acc_cons = acc_cons
-        self.no_acc_cons = False
+        #check if any switches happen
+        if not np.all(o_cons == o_cons[0]):
+            acc_cons = np.array(np.zeros(4))
+            for i in range(1, len(o_cons)):
+                if o_cons[i-1] != o_cons[i]:
+                    acc_cons = np.vstack((acc_cons, [-1, 0, -9.81, i]))
+            acc_cons = np.delete(acc_cons, 0, 0)
+            self.acc_cons = acc_cons
+            self.no_acc_cons = False
+            print(self.acc_cons)
 
     def get_Hessian(self):
         H = None
@@ -311,7 +313,7 @@ class MinSnap(object):
         if self.plt:
             self.plot(x_coeff, y_coeff, z_coeff)
             #self.plot_circle(x_coeff, y_coeff, z_coeff)
-            exit()
+            #exit()
 
         #return x_coeff, y_coeff, z_coeff
         return traj_struct, self.num_segments, self.time_segments
@@ -465,5 +467,6 @@ class MinSnap(object):
             cont_time = cont_time + T
         #ax.set_aspect('equal')
         plt.show()
+        #exit()
 
 
