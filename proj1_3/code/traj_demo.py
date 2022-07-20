@@ -52,13 +52,13 @@ cons = my_waypoint_traj.get_contraints()
 des_thrust = quad_params['k_thrust']*4*(1*quad_params['rotor_speed_max'])**2
 #pos = np.array([[0, -1, 0], [0, 0, 4], [0, 3.5, 4],  [0, 4, 4], [0, 4.5, 4], [0, 8, 4], [0, 9, 0]])
 pos = np.array([[0, -1, -1], [0, 0, 4], [0, 4, 4], [0, 8, 4], [0, 9, -1]]) #'narrow window'
-o = np.array([1,1,-1,-1,-1])
+o = np.array([1,-1,-1,1,1])
 
 #straight line paths
-#pos = np.array([[0, 0, 0], [0, 0, 2], [0, 0, 4], [0, 0, 8],[0, 0, 4], [0, 0, 2], [0, 0, -1]]) #verticle path
+#pos = np.array([[0, 0, 0], [0, 0, 4], [0, 0, 8],[0, 0, 4],  [0, 0, -1]]) #verticle path
 #pos = np.array([[0, 0, 0], [0, 2, 0], [0, 4, 0], [0, 8, 0],[0, 4, 0], [0, 2, 0], [0, -1, 0]]) #y axis travel
 #pos = np.array([[0, 0, 0], [1, 2, 0], [2, 4, 0], [4, 8, 0],[2, 4, 0], [1, 2, 0], [0, -1, 0]]) #horizontal travel
-#o = np.array([1,1,1,-1,-1,-1,-1])
+#o = np.array([1,1,-1,-1,-1])
 
 #circular path
 #pos = np.array(([0, 0, -2],[0, np.sqrt(2), -np.sqrt(2)],[0, 2, 0], [0, np.sqrt(2), np.sqrt(2)], [0, 0, 2], [0, -np.sqrt(2), np.sqrt(2)],
@@ -91,7 +91,7 @@ goal = pos[-1]
 my_world_traj = WorldTrajMod(world, start, cons) #for min snap w/body angle control
 
 # Set simulation parameters.
-t_final = 15
+t_final = 9
 
 #a = 0
 #b = 0
@@ -319,67 +319,69 @@ ax.grid('major')
 ax.set_title('force magnitude')
 
 #Ideal Trajectory (w/o position gains)
-(fig, axes) = plt.subplots(nrows=7, ncols=1, sharex=True, num='Ideal Trajectory')
-
-s = control['ideal_traj'][:, 0] #mode
-ax = axes[0]
-ax.plot(sim_time, s)
-ax.set_ylabel('mode')
-ax.grid('major')
-ax.set_title('Mode')
-
-s = control['ideal_traj'][:, 1] #F sign
-ax = axes[1]
-ax.plot(sim_time, s)
-ax.set_ylabel('sign_f')
-ax.grid('major')
-ax.set_title('sign_f')
+(fig, axes) = plt.subplots(nrows=5, ncols=1, sharex=True, num='Ideal Trajectory')
 
 s = control['ideal_traj'][:, 2] #quad orientation
-ax = axes[2]
+ax = axes[0]
 ax.plot(sim_time, s)
-ax.set_ylabel('quad_o')
 ax.grid('major')
-ax.set_title('quad_o')
+ax.set_title('Quad Orientation')
+
+s = control['ideal_traj'][:, 0] #mode
+ax = axes[1]
+ax.plot(sim_time, s)
+#ax.set_ylabel('mode')
+ax.grid('major')
+ax.set_title('Hopf Fibration Chart')
 
 abc_des = control['ideal_traj'][:,3] #abc
 a = control['ideal_traj'][:,3]
 b = control['ideal_traj'][:,4]
 c = control['ideal_traj'][:,5]
-ax = axes[3]
+ax = axes[2]
 ax.plot(sim_time, a, 'r.', sim_time, b, 'g.', sim_time, c, 'b.')
 ax.legend(('a', 'b', 'c'), loc='upper right')
 ax.grid('major')
-ax.set_title('b3 des')
+ax.set_title('Desired b3')
 
 abc_des = control['ideal_traj'][4] #F des
 x = control['ideal_traj'][:,6]
 y = control['ideal_traj'][:,7]
 z = control['ideal_traj'][:,8]
-ax = axes[4]
+ax = axes[3]
 ax.plot(sim_time, x, 'r.', sim_time, y, 'g.', sim_time, z, 'b.')
 ax.legend(('x', 'y', 'z'), loc='upper right')
 ax.grid('major')
-ax.set_title('F des')
+ax.set_ylabel('Force (N)')
+ax.set_title('Desired Force')
 
 a_des = control['ideal_traj'][5] #w des
 x = control['ideal_traj'][:,9]
 y = control['ideal_traj'][:,10]
 z = control['ideal_traj'][:,11]
-ax = axes[5]
+ax = axes[4]
 ax.plot(sim_time, x, 'r.', sim_time, y, 'g.', sim_time, z, 'b.')
 ax.legend(('x', 'y', 'z'), loc='upper right')
 ax.grid('major')
 ax.set_xlabel('time (s)')
-ax.set_title('w_des')
-
+ax.set_ylabel('Angular Velocity (rad/s)')
+ax.set_title('Desired Angular Velocity')
+'''
+s = control['ideal_traj'][:, 1] #F sign
+ax = axes[5]
+ax.plot(sim_time, s)
+#ax.set_ylabel('sign_f')
+ax.grid('major')
+ax.set_title('F_z Sign')
+'''
+'''
 s = control['ideal_traj'][:,12]
 ax = axes[6]
 ax.plot(sim_time, s)
 ax.set_ylabel('f_mag')
 ax.grid('major')
 ax.set_title('force magnitude')
-
+'''
 #z_ddot vs y_ddot
 # Desired Body Rates
 (fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='y_ddot vs z_ddot')
@@ -399,9 +401,13 @@ a_des = control['acc_plan']
 ax = axes
 ax.plot(a_des[:,1], a_des[:,2], 'r.')
 ax.plot(a_des[0,1], a_des[0,2], 'go', markersize=8, markeredgewidth=3, markerfacecolor='none')
-ax.plot(a_des[-1,2], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.plot(0, 0, 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
 ax.plot(0, -9.81, 'bo', markersize=16, markeredgewidth=3, markerfacecolor='none')
+#plt.xlim([-11, 6])
+#plt.ylim([-11, 6])
 ax.grid('major')
+ax.set_xlabel('acc_y (m^2/s)')
+ax.set_ylabel('acc_z (m^2/s)')
 ax.set_title('y_ddot vs z_ddot des')
 
 #acceleration vs gain components
@@ -434,7 +440,7 @@ ax.legend(handles=[
 # Animation (Slow)
 # Instead of viewing the animation live, you may provide a .mp4 filename to save.
 R = Rotation.from_quat(state['q']).as_matrix()
-filename = "test.mp4"
+filename = "traj1.mp4"
 filename = None
 ani = animate(sim_time, state['x'], R, world=world, filename=filename)
 plt.show()

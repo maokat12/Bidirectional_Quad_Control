@@ -69,7 +69,7 @@ def simulate(initial_state, quadrotor, controller, trajectory, t_final, terminat
     else:                    # Custom exit.
         normal_exit = terminate
 
-    t_step = 1/500 # in seconds, determines control loop frequency
+    t_step = 1/1000 # in seconds, determines control loop frequency
 
     time    = [0]
     state   = [copy.deepcopy(initial_state)]

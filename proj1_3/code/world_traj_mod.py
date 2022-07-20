@@ -7,6 +7,8 @@ import copy
 from rdp import rdp
 from sympy import cos, sin, diff, symbols
 from .min_snap import MinSnap
+from .min_jerk import MinJerk
+from .narrow_window_min_snap import MinSnapNW
 import shape_traj
 
 class WorldTrajMod(object):
@@ -28,6 +30,8 @@ class WorldTrajMod(object):
         self.quad_o = 1
         self.k = -1
         self.naive = False
+        self.snap = False
+        self.jerk = True
         self.num_segments = None
         self.acc_cons = None
 
@@ -48,20 +52,19 @@ class WorldTrajMod(object):
 
         if self.naive:
             self.traj_struct = self.naive_trajectory(self.points, self.start, self.x_dot, self.vel)
-        else: #min snap
+        elif self.snap:
+            #vanilla min snap
             my_min_snap = MinSnap(self.points, self.vel, self.max_vel, self.dist_threshold)
             my_min_snap.set_o_cons(self.o_cons)
-            if len(cons) == 3:
+            if len(cons) == 3: #if additional acceleration constraints are specified
                 my_min_snap.set_acc_cons(self.acc_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
-
-            #print(self.traj_struct)
-            '''
-            with open('traj_struct.csv', 'w') as csvfile:
-                csvwriter = csv.writer(csvfile)
-                # writing the data rows
-                csvwriter.writerows(self.traj_struct)
-            '''
+        else: #jerk
+            my_min_jerk = MinJerk(self.points, self.vel, self.max_vel, self.dist_threshold)
+            my_min_jerk.set_o_cons(self.o_cons)
+            if len(cons) == 3: #if additional acceleration constraints are specified
+                my_min_jerk.set_acc_cons(self.acc_cons)
+            self.traj_struct, self.num_segments, self.time_segments = my_min_jerk.get_trajectory()
 
     def naive_trajectory(self, points, start, x_dot, vel):
         # create trajectory structure
@@ -87,8 +90,10 @@ class WorldTrajMod(object):
     def update(self, t):
         if self.naive:
             flat_output = self.naive_update(t)
-        else:
+        elif self.snap:
             flat_output = self.min_snap_update(t)
+        else: #jerk
+            flat_output = self.min_jerk_update(t)
         return flat_output
 
     def naive_update(self, t):
@@ -163,6 +168,56 @@ class WorldTrajMod(object):
                             vel = [0, 7*pos[0], 6*pos[1], 5*pos[2], 4*pos[3], 3*pos[4], 2*pos[5], pos[6]]
                             acc = [0, 0, 42*pos[0], 30*pos[1], 20*pos[2], 12*pos[3], 6*pos[4], 2*pos[5]]
                             jerk = [0, 0, 0, 210*pos[0], 120*pos[1], 60*pos[2], 24*pos[3], 6*pos[4]]
+
+                            self.x = np.append(self.x, np.polyval(np.array(pos), T))
+                            self.x_dot = np.append(self.x_dot, np.polyval(np.array(vel), T))
+                            self.x_ddot = np.append(self.x_ddot, np.polyval(np.array(acc), T))
+                            self.x_dddot = np.append(self.x_dddot, np.polyval(np.array(jerk), T))
+                        break
+        flat_output = {'x': self.x, 'x_dot': self.x_dot, 'x_ddot': self.x_ddot, 'x_dddot': self.x_dddot,
+                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot, 'quad_o': self.quad_o}
+        return flat_output
+
+    def min_jerk_update(self, t):
+        if self.i == 0 and t == np.inf: #first inf - pass end location
+            self.x = self.end
+            self.i = self.i + 1
+        elif self.i == 1 and t == np.inf: #second inf - pass end yaw
+            self.yaw = self.yaw
+            self.i = self.i + 1
+
+        # check if quadrotor has reached final location
+        else:
+            if self.i == 2: #reset starting location after np.inf passes
+                self.x = self.start
+                self.i = self.i + 1
+                self.quad_o = self.o_cons[0]
+            elif t > self.traj_struct[0][-1]: #stop once last waypoint reached
+                self.x_dot = float(0)*self.x_dot
+                self.x_ddot = float(0)*self.x_ddot
+                self.x_dddot = float(0)*self.x_dddot
+                self.x = self.end
+                self.t_start = t
+                self.quad_o = self.o_cons[-1]
+            else:
+                #print(t)
+                #for j in range(len(self.traj_struct[0])-1): #per waypoint
+                for j in range(self.num_segments):
+                    if t < self.traj_struct[0][j]:
+                        self.x = np.array([])
+                        self.x_dot = np.array([])
+                        self.x_ddot = np.array([])
+                        self.x_dddot = np.array([])
+                        self.quad_o = self.traj_struct[4][j]
+
+                        T = t
+                        if j != 0: #get time segment time, not cumulative time
+                            T = t - self.traj_struct[0][j-1]
+                        for i in range(1,4): #loop to build x(1),y(2),z(3) components
+                            pos = self.traj_struct[i][0+6*j:6+6*j]
+                            vel = [0, 5*pos[0], 4*pos[1], 3*pos[2], 2*pos[3], pos[4]]
+                            acc = [0, 0, 20*pos[0], 12*pos[1], 6*pos[2], 2*pos[3]]
+                            jerk =[0, 0, 0, 60*pos[0], 24*pos[1], 6*pos[2]]
 
                             self.x = np.append(self.x, np.polyval(np.array(pos), T))
                             self.x_dot = np.append(self.x_dot, np.polyval(np.array(vel), T))
