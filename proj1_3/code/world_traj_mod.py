@@ -8,6 +8,7 @@ from rdp import rdp
 from sympy import cos, sin, diff, symbols
 from .min_snap import MinSnap
 from .min_jerk import MinJerk
+from .min_crackle import MinCrackle
 from .narrow_window_min_snap import MinSnapNW
 import shape_traj
 
@@ -18,7 +19,7 @@ class WorldTrajMod(object):
 
     def __init__(self, world, start, cons):
         self.vel = 2 # m/s - self selected
-        self.max_vel = 5 #m/s,  #use 3.4 for naive
+        self.max_vel = 10 #m/s,  #use 3.4 for naive
         self.dist_threshold = 1 #m
         self.x_dot = np.zeros((3,))
 
@@ -30,8 +31,9 @@ class WorldTrajMod(object):
         self.quad_o = 1
         self.k = -1
         self.naive = False
-        self.snap = False
-        self.jerk = True
+        self.snap = True
+        self.jerk = False
+        self.crackle = False
         self.num_segments = None
         self.acc_cons = None
 
@@ -59,12 +61,18 @@ class WorldTrajMod(object):
             if len(cons) == 3: #if additional acceleration constraints are specified
                 my_min_snap.set_acc_cons(self.acc_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
-        else: #jerk
+        elif self.jerk: #jerk
             my_min_jerk = MinJerk(self.points, self.vel, self.max_vel, self.dist_threshold)
             my_min_jerk.set_o_cons(self.o_cons)
             if len(cons) == 3: #if additional acceleration constraints are specified
                 my_min_jerk.set_acc_cons(self.acc_cons)
             self.traj_struct, self.num_segments, self.time_segments = my_min_jerk.get_trajectory()
+        else: #crackle
+            my_min_crackle = MinCrackle(self.points, self.vel, self.max_vel, self.dist_threshold)
+            my_min_crackle.set_o_cons(self.o_cons)
+            if len(cons) == 3: #if additional acceleration constraints are specified
+                my_min_crackle.set_acc_cons(self.acc_cons)
+            self.traj_struct, self.num_segments, self.time_segments = my_min_crackle.get_trajectory()
 
     def naive_trajectory(self, points, start, x_dot, vel):
         # create trajectory structure
@@ -92,8 +100,10 @@ class WorldTrajMod(object):
             flat_output = self.naive_update(t)
         elif self.snap:
             flat_output = self.min_snap_update(t)
-        else: #jerk
+        elif self.jerk:
             flat_output = self.min_jerk_update(t)
+        elif self.crackle:
+            flat_output = self.min_crackle_update(t)
         return flat_output
 
     def naive_update(self, t):
@@ -173,6 +183,60 @@ class WorldTrajMod(object):
                             self.x_dot = np.append(self.x_dot, np.polyval(np.array(vel), T))
                             self.x_ddot = np.append(self.x_ddot, np.polyval(np.array(acc), T))
                             self.x_dddot = np.append(self.x_dddot, np.polyval(np.array(jerk), T))
+                        break
+        flat_output = {'x': self.x, 'x_dot': self.x_dot, 'x_ddot': self.x_ddot, 'x_dddot': self.x_dddot,
+                       'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot, 'quad_o': self.quad_o}
+        return flat_output
+
+    def min_crackle_update(self, t):
+        if self.i == 0 and t == np.inf: #first inf - pass end location
+            self.x = self.end
+            self.i = self.i + 1
+        elif self.i == 1 and t == np.inf: #second inf - pass end yaw
+            self.yaw = self.yaw
+            self.i = self.i + 1
+
+        # check if quadrotor has reached final location
+        else:
+            if self.i == 2: #reset starting location after np.inf passes
+                self.x = self.start
+                self.i = self.i + 1
+                self.quad_o = self.o_cons[0]
+            elif t > self.traj_struct[0][-1]: #stop once last waypoint reached
+                self.x_dot = float(0)*self.x_dot
+                self.x_ddot = float(0)*self.x_ddot
+                self.x_dddot = float(0)*self.x_dddot
+                self.x_ddddot = float(0)*self.x_ddddot
+                self.x = self.end
+                self.t_start = t
+                self.quad_o = self.o_cons[-1]
+            else:
+                #print(t)
+                #for j in range(len(self.traj_struct[0])-1): #per waypoint
+                for j in range(self.num_segments):
+                    if t < self.traj_struct[0][j]:
+                        self.x = np.array([])
+                        self.x_dot = np.array([])
+                        self.x_ddot = np.array([])
+                        self.x_dddot = np.array([])
+                        self.x_ddddot = np.array([])
+                        self.quad_o = self.traj_struct[4][j]
+
+                        T = t
+                        if j != 0: #get time segment time, not cumulative time
+                            T = t - self.traj_struct[0][j-1]
+                        for i in range(1,4): #loop to build x(1),y(2),z(3) components
+                            pos = self.traj_struct[i][0+10*j:10+10*j]
+                            vel = [0, 9*pos[0], 8*pos[1], 7*pos[2], 6*pos[3], 5*pos[4], 4*pos[5], 3*pos[6], 2*pos[7], pos[8]]
+                            acc = [0, 0, 72*pos[0], 56*pos[1], 42*pos[2], 30*pos[3], 20*pos[4], 12*pos[5], 6*pos[6], 2*pos[7]]
+                            jerk = [0, 0, 0, 504*pos[0], 336*pos[1], 210*pos[2], 120*pos[3], 60*pos[4], 24*pos[5], 6*pos[6]]
+                            snap = [0, 0, 0, 0, 3024*pos[0], 1680*pos[1], 840*pos[2], 360*pos[3], 120*pos[4], 24*pos[5]]
+
+                            self.x = np.append(self.x, np.polyval(np.array(pos), T))
+                            self.x_dot = np.append(self.x_dot, np.polyval(np.array(vel), T))
+                            self.x_ddot = np.append(self.x_ddot, np.polyval(np.array(acc), T))
+                            self.x_dddot = np.append(self.x_dddot, np.polyval(np.array(jerk), T))
+                            self.x_ddddot = np.append(self.x_ddddot, np.polyval(np.array(snap), T))
                         break
         flat_output = {'x': self.x, 'x_dot': self.x_dot, 'x_ddot': self.x_ddot, 'x_dddot': self.x_dddot,
                        'x_ddddot': self.x_ddddot, 'yaw': self.yaw, 'yaw_dot': self.yaw_dot, 'quad_o': self.quad_o}

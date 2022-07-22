@@ -231,17 +231,31 @@ class MinSnap(object):
                 b_z = np.hstack((b_z, curr_pos[2]+m, -1*curr_pos[2]+m))
         #exit()
 
-        #inequality constraints - velocity
-        for k in range(self.num_segments):
-            T = self.time_segments[k]
-            for j in range(i+1):
-                A_sub = np.block([[7*(T*j/i)**6, 6*(T*j/i)**5, 5*(T*j/i)**4, 4*(T*j/i)**3, 3*(T*j/i)**2, 2*T*j/i, 1, 0],
-                                  [-7*(T*j/i)**6, -6*(T*j/i)**5, -5*(T*j/i)**4, -4*(T*j/i)**3, -3*(T*j/i)**2, -2*(T*j/i), -1, 0]])
-                A = np.block([[A],
-                              [np.zeros((2, 8*k)), A_sub, np.zeros((2, 8*(self.num_segments-(k+1))))]])
-                b_x = np.hstack((b_x, vel_max, vel_max))
-                b_y = np.hstack((b_y, vel_max, vel_max))
-                b_z = np.hstack((b_z, vel_max, vel_max))
+            #inequality constraints - velocity
+            for k in range(self.num_segments):
+                T = self.time_segments[k]
+                for j in range(i+1):
+                    A_sub = np.block([[7*(T*j/i)**6, 6*(T*j/i)**5, 5*(T*j/i)**4, 4*(T*j/i)**3, 3*(T*j/i)**2, 2*T*j/i, 1, 0],
+                                      [-7*(T*j/i)**6, -6*(T*j/i)**5, -5*(T*j/i)**4, -4*(T*j/i)**3, -3*(T*j/i)**2, -2*(T*j/i), -1, 0]])
+                    A = np.block([[A],
+                                  [np.zeros((2, 8*k)), A_sub, np.zeros((2, 8*(self.num_segments-(k+1))))]])
+                    b_x = np.hstack((b_x, vel_max, vel_max))
+                    b_y = np.hstack((b_y, vel_max, vel_max))
+                    b_z = np.hstack((b_z, vel_max, vel_max))
+
+            #inequality constraints - jerk
+            jerk_max = 55 #visually lifted from plot
+            for k in range(self.num_segments):
+                T = self.time_segments[k]
+                for j in range(i+1):
+                    A_sub = np.block([[210*((T*j/i)**4), 120*((T*j/i)**3), 60*((T*j/i)**2), 24*(T*j/i), 6, 0, 0, 0],
+                                      [-210*((T*j/i)**4), -120*((T*j/i)**3), -60*((T*j/i)**2), -24*(T*j/i), -6, 0, 0, 0]])
+                    A = np.block([[A],
+                                  [np.zeros((2, 8*k)), A_sub, np.zeros((2, 8*(self.num_segments-(k+1))))]])
+                    b_x = np.hstack((b_x, jerk_max, jerk_max))
+                    b_y = np.hstack((b_y, jerk_max, jerk_max))
+                    b_z = np.hstack((b_z, jerk_max, jerk_max))
+
 
         return A, b_x, b_y, b_z
 
@@ -385,88 +399,7 @@ class MinSnap(object):
 
             cont_time = cont_time + T
         plt.show()
+        exit()
 
-    def plot_circle(self, x_coeff, y_coeff, z_coeff):
-        cont_time = 0
-        plt.figure(5)
-        ax = plt.axes(projection='3d')
-        w_c = 1
-        for i in range(self.num_segments):
-            T = self.time_segments[i]
-            time_math = np.linspace(0, T, 50)
-            time_plot = np.linspace(cont_time, cont_time+T, 50)
-            #pos
-            x = x_coeff[0+8*i:8+8*i]
-            y = y_coeff[0+8*i:8+8*i]
-            z = z_coeff[0+8*i:8+8*i]
-            #velocity
-            dx = [0, 7*x[0], 6*x[1], 5*x[2], 4*x[3], 3*x[4], 2*x[5], x[6]]
-            dy = [0, 7*y[0], 6*y[1], 5*y[2], 4*y[3], 3*y[4], 2*y[5], y[6]]
-            dz = [0, 7*z[0], 6*z[1], 5*z[2], 4*z[3], 3*z[4], 2*z[5], z[6]]
-            #acceleration
-            ddx = [0, 0, 42*x[0], 30*x[1], 20*x[2], 12*x[3], 6*x[4], 2*x[5]]
-            ddy = [0, 0, 42*y[0], 30*y[1], 20*y[2], 12*y[3], 6*y[4], 2*y[5]]
-            ddz = [0, 0, 42*z[0], 30*z[1], 20*z[2], 12*z[3], 6*z[4], 2*z[5]]
-            #jerk
-            dddx = [0, 0, 0, 210*x[0], 120*x[1], 60*x[2], 24*x[3], 6*x[4]]
-            dddy = [0, 0, 0, 210*y[0], 120*y[1], 60*y[2], 24*y[3], 6*y[4]]
-            dddz = [0, 0, 0, 210*z[0], 120*z[1], 60*z[2], 24*z[3], 6*z[4]]
-
-            #if i == 0:
-            #print('coeffs', x)
-            #print('poly only', np.polyval(np.array(x), time_math))
-            #print('x_array', np.polyval(np.array(x), time_math)*np.cos(w_c*time_plot))
-            #print('time_math', time_math)
-            #print('time_plot', time_plot)
-
-
-            x_pos = np.polyval(np.array(x), time_math)*np.cos(w_c*time_plot)
-            x_vel = np.polyval(np.array(dx), time_math)*np.cos(w_c*time_plot) - x_pos*w_c*np.sin(w_c*time_plot)
-            x_acc = np.polyval(np.array(ddx), time_math)*np.sin(w_c*time_plot) - 2*w_c*x_vel*np.sin(w_c*time_plot) - w_c**2*x_pos*np.cos(w_c*time_plot)
-            x_jerk = (np.polyval(np.array(dddx), time_math)-3*w_c**2*x_vel)*np.cos(w_c*time_plot) - (3*w_c*x_acc - w_c**3*x_pos)*np.sin(w_c*time_plot)
-
-            y_pos = np.polyval(np.array(x), time_math)*np.sin(w_c*time_plot) + self.start[1]
-            y_vel = np.polyval(np.array(dx), time_math)*np.sin(w_c*time_plot) + x_pos*w_c*np.cos(w_c*time_plot)
-            y_acc = np.polyval(np.array(ddx), time_math)*np.sin(w_c*time_plot) + 2*w_c*x_vel*np.cos(w_c*time_plot) - w_c**2*x_pos*np.sin(w_c*time_plot)
-            y_jerk = (np.polyval(np.array(dddx), time_math)-3*w_c**2*x_vel)*np.sin(w_c*time_plot) + (3*w_c*x_acc - w_c**3*x_pos)*np.cos(w_c*time_plot)
-
-            z_pos = np.polyval(np.array(z), time_math)*0.0
-            z_vel = np.polyval(np.array(dz), time_math)*0.0
-            z_acc = np.polyval(np.array(ddz), time_math)*0.0
-            z_jerk = np.polyval(np.array(dddz), time_math)*0.0
-
-            #print('x_pos', x_pos)
-            #print('time_math', time_math)
-            #print('time_plot', time_plot)
-
-
-            plt.figure(1)
-            plt.plot(time_plot, x_pos, 'r', label = 'x')
-            plt.plot(time_plot, y_pos, 'g', label = 'y')
-            plt.plot(time_plot, z_pos, 'b', label = 'z')
-            plt.title('position')
-            plt.figure(2)
-            plt.plot(time_plot, x_vel, 'r')
-            plt.plot(time_plot, y_vel, 'g')
-            plt.plot(time_plot, z_vel, 'b')
-            plt.title('velocity')
-            plt.figure(3)
-            plt.plot(time_plot, x_acc, 'r')
-            plt.plot(time_plot, y_acc, 'g')
-            plt.plot(time_plot, z_acc, 'b')
-            plt.title('acceleration')
-            plt.figure(4)
-            plt.plot(time_plot, x_jerk, 'r')
-            plt.plot(time_plot, y_jerk, 'g')
-            plt.plot(time_plot, z_jerk, 'b')
-            plt.title('jerk')
-            plt.figure(5)
-            ax.plot3D(x_pos, y_pos, z_pos, 'gray')
-            plt.title('trajectory')
-
-            cont_time = cont_time + T
-        #ax.set_aspect('equal')
-        plt.show()
-        #exit()
 
 

@@ -266,27 +266,28 @@ ax.grid('major')
 ax.set_title('Quad Orientation')
 '''
 #Sign Force and Time
-(fig, axes) = plt.subplots(nrows=7, ncols=1, sharex=True, num='Quad Orientation vs Time')
-s = control['mode']
-ax = axes[0]
-ax.plot(sim_time, s)
-ax.set_ylabel('mode')
-ax.grid('major')
-ax.set_title('Mode')
+(fig, axes) = plt.subplots(nrows=6, ncols=1, sharex=True, num='Quad Orientation vs Time')
 
 s = control['sign_f']
-ax = axes[1]
+ax = axes[0]
 ax.plot(sim_time, s)
 ax.set_ylabel('sign_f')
 ax.grid('major')
 ax.set_title('sign_f')
 
 s = control['cmd_o']
-ax = axes[2]
+ax = axes[1]
 ax.plot(sim_time, s)
 ax.set_ylabel('quad_o')
 ax.grid('major')
-ax.set_title('quad_o')
+ax.set_title('Quad Orientation')
+
+s = control['mode']
+ax = axes[2]
+ax.plot(sim_time, s)
+ax.set_ylabel('mode')
+ax.grid('major')
+ax.set_title('Chart')
 
 abc_des = control['abc']
 ax = axes[3]
@@ -301,22 +302,30 @@ ax.plot(sim_time, abc_des[:,0], 'r.', sim_time, abc_des[:,1], 'g.', sim_time, ab
 ax.legend(('x', 'y', 'z'), loc='upper right')
 ax.grid('major')
 ax.set_title('F des')
-
+'''
 a_des = control['acc_des']
 ax = axes[5]
 ax.plot(sim_time, a_des[:,0], 'r.', sim_time, a_des[:,1], 'g.', sim_time, a_des[:,2], 'b.')
-#ax.plot(sim_time, a_des)
 ax.legend(('x', 'y', 'z'), loc='upper right')
 ax.grid('major')
 ax.set_xlabel('time (s)')
 ax.set_title('r_ddot_des')
-
+'''
+'''
 s = control['F_mag']
 ax = axes[6]
 ax.plot(sim_time, s)
 ax.set_ylabel('f_mag')
 ax.grid('major')
 ax.set_title('force magnitude')
+'''
+s = state['w']
+ax = axes[5]
+ax.plot(sim_time, s[:,0], 'r.', sim_time, s[:,1], 'g.', sim_time, s[:,2], 'b.')
+ax.legend(('x', 'y', 'z'), loc='upper right')
+ax.set_ylabel('w (rad/s)')
+ax.grid('major')
+ax.set_title('angular velocity')
 
 #Ideal Trajectory (w/o position gains)
 (fig, axes) = plt.subplots(nrows=5, ncols=1, sharex=True, num='Ideal Trajectory')
