@@ -91,7 +91,7 @@ goal = pos[-1]
 my_world_traj = WorldTrajMod(world, start, cons) #for min snap w/body angle control
 
 # Set simulation parameters.
-t_final = 15
+t_final = 10
 
 #a = 0
 #b = 0
@@ -380,8 +380,8 @@ ax.set_ylabel('f_mag')
 ax.grid('major')
 ax.set_title('force magnitude')
 
+'''
 #z_ddot vs y_ddot
-# Desired Body Rates
 (fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='y_ddot vs z_ddot')
 a_des = control['r_des']
 ax = axes
@@ -391,7 +391,7 @@ ax.plot(a_des[-1,2], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, marker
 ax.plot(0, -9.81, 'bo', markersize=16, markeredgewidth=3, markerfacecolor='none')
 ax.grid('major')
 ax.set_title('y_ddot vs z_ddot des')
-
+'''
 #z_ddot vs y_ddot
 # Desired Body Rates
 (fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='y_ddot vs z_ddot planned')
@@ -399,7 +399,19 @@ a_des = control['acc_plan']
 ax = axes
 ax.plot(a_des[:,1], a_des[:,2], 'r.')
 ax.plot(a_des[0,1], a_des[0,2], 'go', markersize=8, markeredgewidth=3, markerfacecolor='none')
-ax.plot(a_des[-1,2], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.plot(a_des[-1,1], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.plot(0, -9.81, 'bo', markersize=16, markeredgewidth=3, markerfacecolor='none')
+ax.grid('major')
+ax.set_title('y_ddot vs z_ddot des')
+
+#z_ddot vs x_ddot
+# Desired Body Rates
+(fig, axes) = plt.subplots(nrows=1, ncols=1, sharex=True, num='x_ddot vs z_ddot planned')
+a_des = control['acc_plan']
+ax = axes
+ax.plot(a_des[:,0], a_des[:,2], 'r.')
+ax.plot(a_des[0,0], a_des[0,2], 'go', markersize=8, markeredgewidth=3, markerfacecolor='none')
+ax.plot(a_des[-1,0], a_des[-1,2], 'ro', markersize=16, markeredgewidth=3, markerfacecolor='none')
 ax.plot(0, -9.81, 'bo', markersize=16, markeredgewidth=3, markerfacecolor='none')
 ax.grid('major')
 ax.set_title('y_ddot vs z_ddot des')

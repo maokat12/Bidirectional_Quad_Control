@@ -7,6 +7,7 @@ import copy
 from rdp import rdp
 from sympy import cos, sin, diff, symbols
 from .min_snap import MinSnap
+from .narrow_window_min_snap import MinSnapNW
 import shape_traj
 
 class WorldTrajMod(object):
@@ -30,6 +31,7 @@ class WorldTrajMod(object):
         self.naive = False
         self.num_segments = None
         self.acc_cons = None
+        self.narrow_window = True
 
         #break out constraints
         self.points = cons[0] #position constraint
@@ -48,6 +50,13 @@ class WorldTrajMod(object):
 
         if self.naive:
             self.traj_struct = self.naive_trajectory(self.points, self.start, self.x_dot, self.vel)
+        elif self.narrow_window:
+            my_min_snap = MinSnapNW(self.points, self.vel, self.max_vel, self.dist_threshold)
+            my_min_snap.set_o_cons(self.o_cons)
+            my_min_snap.set_narrow_window_waypoint(2)
+            if len(cons) == 3:
+                my_min_snap.set_acc_cons(self.acc_cons)
+            self.traj_struct, self.num_segments, self.time_segments = my_min_snap.get_trajectory()
         else: #min snap
             my_min_snap = MinSnap(self.points, self.vel, self.max_vel, self.dist_threshold)
             my_min_snap.set_o_cons(self.o_cons)
